@@ -9,4 +9,8 @@ setup(name='drupal-scout',
       author_email='in0mad91@gmail.com',
       packages=['drupal_scout'],
       scripts=['bin/drupal-scout'],
+      install_requires=[
+            'jq',
+            'argparse'
+      ],
       zip_safe=False)
