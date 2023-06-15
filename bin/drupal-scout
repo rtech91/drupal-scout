@@ -1,1 +1,6 @@
 #!/usr/bin/env python
+
+from drupal_scout import Application
+
+app = Application()
+app.run()
