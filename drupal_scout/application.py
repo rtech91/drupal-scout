@@ -11,7 +11,8 @@ class Application:
     """
     The main application class.
     """
-    def run(self):
+    @classmethod
+    def run(cls):
         # This is the main entry point for the application.
         # It should check the existence of the composer.json and composer.lock files,
         # parse the composer.json file to get the required modules,
@@ -20,7 +21,7 @@ class Application:
 
         try:
             parser = ArgumentParser()
-            parser = self.__get_argparser_configuration(parser)
+            parser = cls.__get_argparser_configuration(parser)
             args = parser.parse_args()
 
             # check if the directory exists and whether the composer.json file exists in it
@@ -32,14 +33,14 @@ class Application:
                 raise NoComposerJSONFileException()
 
             # check if the Drupal project uses Composer 2
-            if not self.__is_composer2(args):
+            if not cls.__is_composer2(args):
                 raise ComposerV1Exception()
 
             # get the required modules from the composer.json file
-            modules = self.__get_required_modules(args)
+            modules = cls.__get_required_modules(args)
 
             if len(modules) > 0 and not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
-                versioned_modules = self.__get_module_versions(args, modules)
+                versioned_modules = cls.__get_module_versions(args, modules)
                 pprint(versioned_modules)
             elif len(modules) > 0 and args.no_lock:
                 print("The composer.lock file was not used to determine the installed versions of the modules.")
@@ -48,7 +49,8 @@ class Application:
             print(e.message)
             exit(1)
 
-    def __get_argparser_configuration(self, parser) -> ArgumentParser:
+    @classmethod
+    def __get_argparser_configuration(cls, parser) -> ArgumentParser:
         """
         Get the configuration of the ArgumentParser object.
         :param parser:  the ArgumentParser object
@@ -80,7 +82,30 @@ class Application:
         )
         return parser
 
-    def __is_composer2(self, args):
+    @classmethod
+    def __get_drupal_core_version(cls, args):
+        """
+        Get the version of the Drupal core.
+        :param args:    the arguments passed to the application
+        :type args:     argparse.Namespace
+        :return:        the version of the Drupal core
+        :rtype:         str
+        """
+        with open(os.path.join(args.directory, "composer.json"), "r") as f:
+            composer_json = json.load(f)
+            # Drupal core version can be represented by "drupal/core" requirement
+            # or within the "drupal/core-recommended" requirement
+            if "drupal/core" in composer_json["require"]:
+                drupal_core_version = composer_json["require"]["drupal/core"]
+            elif "drupal/core-recommended" in composer_json["require"]:
+                drupal_core_version = composer_json["require"]["drupal/core-recommended"]
+
+            # #return only digits
+            drupal_core_version = ''.join(filter(str.isdigit, drupal_core_version))
+            return drupal_core_version
+
+    @classmethod
+    def __is_composer2(cls, args):
         """
         Check if the Drupal project uses Composer 2.
         :param args:    the arguments passed to the application
@@ -95,7 +120,8 @@ class Application:
                 return True
         return False
 
-    def __get_required_modules(self, args):
+    @classmethod
+    def __get_required_modules(cls, args):
         """
         Get the list of required modules from the composer.json file.
         :param args:    the arguments passed to the application
@@ -110,7 +136,8 @@ class Application:
                                           "startswith(\"drupal/core\") | not))").input(composer_json).first()
             return required_modules
 
-    def __get_module_versions(self, args, modules):
+    @classmethod
+    def __get_module_versions(cls, args, modules):
         """
         Get the versions of the required modules described in the "composer.lock" file.
         :param args:      the arguments passed to the application
