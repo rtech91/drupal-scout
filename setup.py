@@ -13,4 +13,6 @@ setup(name='drupal-scout',
             'jq',
             'argparse'
       ],
+      test_suite='nose.collector',
+      tests_require=['nose', 'coverage'],
       zip_safe=False)
