@@ -4,6 +4,7 @@ import jq
 from pprint import pprint
 from argparse import ArgumentParser
 from sys import exit
+from .exceptions import *
 
 
 class Application:
@@ -17,38 +18,35 @@ class Application:
         # parse the composer.lock file to get the installed versions of the modules,
         # and output the results in a human-readable format.
 
-        parser = ArgumentParser()
-        parser = self.__get_argparser_configuration(parser)
-        args = parser.parse_args()
-        # check if the directory exists and whether the composer.json file exists in it
-        if not os.path.isdir(args.directory):
-            print("The directory {} does not exist.".format(args.directory))
-            exit(1)
-        # check if the directory contains the composer.json file
-        if not os.path.isfile(os.path.join(args.directory, "composer.json")):
-            print("The directory {} does not contain a composer.json file.".format(args.directory))
-            exit(1)
-        # check if the Drupal project uses Composer 2
-        if not self.__is_composer2(args):
-            print("The directory {} does not contain a Drupal project that uses Composer 2.".format(
-                args.directory))
-            exit(1)
+        try:
+            parser = ArgumentParser()
+            parser = self.__get_argparser_configuration(parser)
+            args = parser.parse_args()
 
-        if args.directory is not '.':  # if the directory is not the current one
-            modules = self.__get_required_modules(args)
-        else:
-            # check if the composer.json file exists in the current directory
-            if not os.path.isfile("composer.json"):
-                print("The current directory does not contain a composer.json file.")
-                exit(1)
+            # check if the directory exists and whether the composer.json file exists in it
+            if not os.path.isdir(args.directory):
+                raise DirectoryNotFoundException("The directory {} does not exist.".format(args.directory))
+
+            # check if the directory contains the composer.json file
+            if not os.path.isfile(os.path.join(args.directory, "composer.json")):
+                raise NoComposerJSONFileException()
+
+            # check if the Drupal project uses Composer 2
+            if not self.__is_composer2(args):
+                raise ComposerV1Exception()
+
+            # get the required modules from the composer.json file
             modules = self.__get_required_modules(args)
 
-        if len(modules) > 0 and not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
-            versioned_modules = self.__get_module_versions(args, modules)
-            pprint(versioned_modules)
-        elif len(modules) > 0 and args.no_lock:
-            print("The composer.lock file was not used to determine the installed versions of the modules.")
-            pprint(modules)
+            if len(modules) > 0 and not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
+                versioned_modules = self.__get_module_versions(args, modules)
+                pprint(versioned_modules)
+            elif len(modules) > 0 and args.no_lock:
+                print("The composer.lock file was not used to determine the installed versions of the modules.")
+                pprint(modules)
+        except (ComposerV1Exception, DirectoryNotFoundException, NoComposerJSONFileException, Exception) as e:
+            print(e.message)
+            exit(1)
 
     def __get_argparser_configuration(self, parser) -> ArgumentParser:
         """
