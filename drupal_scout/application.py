@@ -20,14 +20,21 @@ class Application:
         parser = ArgumentParser()
         parser = self.get_argparser_configuration(parser)
         args = parser.parse_args()
+        # check if the directory exists and whether the composer.json file exists in it
+        if not os.path.isdir(args.directory):
+            print("The directory {} does not exist.".format(args.directory))
+            exit(1)
+        # check if the directory contains the composer.json file
+        if not os.path.isfile(os.path.join(args.directory, "composer.json")):
+            print("The directory {} does not contain a composer.json file.".format(args.directory))
+            exit(1)
+        # check if the Drupal project uses Composer 2
+        if not self.is_composer2(args):
+            print("The directory {} does not contain a Drupal project that uses Composer 2.".format(
+                args.directory))
+            exit(1)
+
         if args.directory is not '.':  # if the directory is not the current one
-            # check if the directory exists and whether the composer.json file exists in it
-            if not os.path.isdir(args.directory):
-                print("The directory {} does not exist.".format(args.directory))
-                exit(1)
-            if not os.path.isfile(os.path.join(args.directory, "composer.json")):
-                print("The directory {} does not contain a composer.json file.".format(args.directory))
-                exit(1)
             modules = self.get_required_modules(args)
         else:
             # check if the composer.json file exists in the current directory
@@ -74,6 +81,21 @@ class Application:
             default=0
         )
         return parser
+
+    def is_composer2(self, args):
+        """
+        Check if the Drupal project uses Composer 2.
+        :param args:    the arguments passed to the application
+        :type args:     argparse.Namespace
+        :return:        True if the Drupal project uses Composer 2, False otherwise
+        :rtype:         bool
+        """
+        # check whether the vendor directory exists and has a composer/platform_check.php file
+        # because this clue is only available in Composer 2
+        if os.path.isdir(os.path.join(args.directory, "vendor")):
+            if os.path.isfile(os.path.join(args.directory, "vendor", "composer", "platform_check.php")):
+                return True
+        return False
 
     def get_required_modules(self, args):
         """
