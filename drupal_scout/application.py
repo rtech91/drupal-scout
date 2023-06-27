@@ -18,7 +18,7 @@ class Application:
         # and output the results in a human-readable format.
 
         parser = ArgumentParser()
-        parser = self.get_argparser_configuration(parser)
+        parser = self.__get_argparser_configuration(parser)
         args = parser.parse_args()
         # check if the directory exists and whether the composer.json file exists in it
         if not os.path.isdir(args.directory):
@@ -29,28 +29,28 @@ class Application:
             print("The directory {} does not contain a composer.json file.".format(args.directory))
             exit(1)
         # check if the Drupal project uses Composer 2
-        if not self.is_composer2(args):
+        if not self.__is_composer2(args):
             print("The directory {} does not contain a Drupal project that uses Composer 2.".format(
                 args.directory))
             exit(1)
 
         if args.directory is not '.':  # if the directory is not the current one
-            modules = self.get_required_modules(args)
+            modules = self.__get_required_modules(args)
         else:
             # check if the composer.json file exists in the current directory
             if not os.path.isfile("composer.json"):
                 print("The current directory does not contain a composer.json file.")
                 exit(1)
-            modules = self.get_required_modules(args)
+            modules = self.__get_required_modules(args)
 
         if len(modules) > 0 and not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
-            versioned_modules = self.get_module_versions(args, modules)
+            versioned_modules = self.__get_module_versions(args, modules)
             pprint(versioned_modules)
         elif len(modules) > 0 and args.no_lock:
             print("The composer.lock file was not used to determine the installed versions of the modules.")
             pprint(modules)
 
-    def get_argparser_configuration(self, parser) -> ArgumentParser:
+    def __get_argparser_configuration(self, parser) -> ArgumentParser:
         """
         Get the configuration of the ArgumentParser object.
         :param parser:  the ArgumentParser object
@@ -82,7 +82,7 @@ class Application:
         )
         return parser
 
-    def is_composer2(self, args):
+    def __is_composer2(self, args):
         """
         Check if the Drupal project uses Composer 2.
         :param args:    the arguments passed to the application
@@ -97,7 +97,7 @@ class Application:
                 return True
         return False
 
-    def get_required_modules(self, args):
+    def __get_required_modules(self, args):
         """
         Get the list of required modules from the composer.json file.
         :param args:    the arguments passed to the application
@@ -112,7 +112,7 @@ class Application:
                                           "startswith(\"drupal/core\") | not))").input(composer_json).first()
             return required_modules
 
-    def get_module_versions(self, args, modules):
+    def __get_module_versions(self, args, modules):
         """
         Get the versions of the required modules described in the "composer.lock" file.
         :param args:      the arguments passed to the application
