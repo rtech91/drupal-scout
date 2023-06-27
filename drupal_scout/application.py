@@ -43,8 +43,8 @@ class Application:
                 exit(1)
             modules = self.get_required_modules(args)
 
-        if len(modules) > 0 and not args.no_lock:
-            versioned_modules = self.get_module_versions(modules)
+        if len(modules) > 0 and not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
+            versioned_modules = self.get_module_versions(args, modules)
             pprint(versioned_modules)
         elif len(modules) > 0 and args.no_lock:
             print("The composer.lock file was not used to determine the installed versions of the modules.")
@@ -112,9 +112,10 @@ class Application:
                                           "startswith(\"drupal/core\") | not))").input(composer_json).first()
             return required_modules
 
-    def get_module_versions(self, modules):
+    def get_module_versions(self, args, modules):
         """
-        Get the versions of the required modules described in the composer.lock file.
+        Get the versions of the required modules described in the "composer.lock" file.
+        :param args:      the arguments passed to the application
         :param modules:   the list of required modules
         :type modules:    list
         :return:          the list of required modules with their versions
@@ -124,12 +125,13 @@ class Application:
             print("No modules to check.")
             exit(0)
 
-        composer_lock = json.load(open("composer.lock", "r"))
         versioned_modules = []
-        for module in modules:
-            # look for the module with name in the packages array
-            module_version = jq.compile(".packages | map(select(.name == \"{}\")) | .[].version".format(module)) \
-                .input(composer_lock).first()
-            # save the module name and version in the versioned_modules array
-            versioned_modules.append({"name": module, "version": module_version})
-        return versioned_modules
+        with open(os.path.join(args.directory, "composer.lock"), "r") as f:
+            composer_lock = json.load(f)
+            for module in modules:
+                # look for the module with name in the packages array
+                module_version = jq.compile(".packages | map(select(.name == \"{}\")) | .[].version".format(module)) \
+                    .input(composer_lock).first()
+                # save the module name and version in the versioned_modules array
+                versioned_modules.append({"name": module, "version": module_version})
+            return versioned_modules
