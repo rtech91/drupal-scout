@@ -52,12 +52,10 @@ class Application:
             if len(self.__modules) > 0:
                 if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
                     self.determine_module_versions(args)
-                    pprint(self.__modules)
                 elif args.no_lock:
                     print("The composer.lock file was not used to determine the installed versions of the modules.")
                     print(
                         "The only Drupal core version will be use to determine the transitive versions of the modules.")
-                    pprint(self.__modules)
                 worker = Worker(
                     module=self.__modules[list(self.__modules)[0]],
                     use_lock_version=args.no_lock,

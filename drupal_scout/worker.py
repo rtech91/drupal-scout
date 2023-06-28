@@ -39,10 +39,7 @@ class Worker:
                     "The module {} is not found Possibly it is no more supported.".format(self.module.name))
             self.module.transitive_entries = self.find_transitive_entries(contents)
             self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
-            pprint(self.module.transitive_entries)
             pprint(self.module.suitable_entries)
-            print(self.module.version)
-            print(self.current_core)
         except ModuleNotFoundException as e:
             print(e.message)
 
