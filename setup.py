@@ -11,7 +11,8 @@ setup(name='drupal-scout',
       scripts=['bin/drupal-scout'],
       install_requires=[
             'jq',
-            'argparse'
+            'argparse',
+            'requests'
       ],
       test_suite='nose.collector',
       tests_require=['nose', 'coverage'],

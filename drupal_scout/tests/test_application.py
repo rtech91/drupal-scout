@@ -34,7 +34,12 @@ class TestApplication(TestCase):
         # write to the file to test the reading
         with open(temp_dir.name + '/composer.json', 'w') as f:
             f.write('{"require": {"drupal/core": "8.8.5"}}')
-        args = argparse.Namespace(directory=temp_dir.name)
-        self.assertEqual(app.get_drupal_core_version(args), '8.8.5')
-        self.assertNotEquals(app.get_drupal_core_version(args), '8.8.6')
+        args = argparse.Namespace(directory=temp_dir.name, no_lock=True)
+        self.assertNotEqual(app.determine_drupal_core_version(args), '8.8.5')
+        args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
+        Path(temp_dir.name + '/composer.lock').touch()
+        # write to the file to test the reading
+        with open(temp_dir.name + '/composer.lock', 'w') as f:
+            f.write('{"packages": [{"name": "drupal/core", "version": "8.8.7"}]}')
+        self.assertNotEqual(app.determine_drupal_core_version(args), '8.8.6')
         temp_dir.cleanup()

@@ -20,3 +20,11 @@ class NoComposerJSONFileException(Exception):
     def __init__(self, message="The directory does not contain the composer.json file."):
         self.message = message
         super().__init__(self.message)
+
+
+class ModuleNotFoundException(Exception):
+    """Exception raised for case when the module is not found."""
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
