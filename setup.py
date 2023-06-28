@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='drupal-scout',
-      version='0.0',
+      version='0.2.0',
       description='Scout out for transitive versions of Drupal modules for the upgrade of the core.',
       url='https://github.com/rtech91/drupal-scout',
       keywords='drupal scout upgrade update',
@@ -11,6 +11,9 @@ setup(name='drupal-scout',
       scripts=['bin/drupal-scout'],
       install_requires=[
             'jq',
-            'argparse'
+            'argparse',
+            'requests'
       ],
+      test_suite='nose.collector',
+      tests_require=['nose', 'coverage'],
       zip_safe=False)
