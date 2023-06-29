@@ -1,12 +1,14 @@
 import json
+import multiprocessing
 import os
-import jq
-from pprint import pprint
 from argparse import ArgumentParser
 from sys import exit
+
+import jq
+
 from .exceptions import *
 from .module import Module
-from .worker import Worker
+from .workers_manager import WorkersManager
 
 
 class Application:
@@ -56,12 +58,15 @@ class Application:
                     print("The composer.lock file was not used to determine the installed versions of the modules.")
                     print(
                         "The only Drupal core version will be use to determine the transitive versions of the modules.")
-                worker = Worker(
-                    module=self.__modules[list(self.__modules)[0]],
-                    use_lock_version=args.no_lock,
-                    current_core=self.__drupal_core_version
+
+                # create the workers manager
+                workers_manager = WorkersManager(
+                    modules=list(self.__modules.values()),
+                    current_core=self.__drupal_core_version,
+                    use_lock_version=not args.no_lock,
+                    number_of_threads=args.threads
                 )
-                worker.run()
+                workers_manager.run()
             else:
                 print("No modules were found in the composer.json file.")
 
@@ -97,7 +102,8 @@ class Application:
             help="The number of threads to use for the concurrent requests and data parsing. By default, "
                  "the application will use all available threads",
             type=int,
-            default=0
+            # the default value is the number of CPU cores
+            default=multiprocessing.cpu_count()
         )
         return parser
 
