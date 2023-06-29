@@ -1,8 +1,7 @@
-import json
-from pprint import pprint
-
 import jq
 import requests
+import threading
+from pprint import pprint
 from packaging import version
 from .module import Module
 from .exceptions import ModuleNotFoundException
@@ -26,22 +25,24 @@ class Worker:
         if type(use_lock_version) is str:
             self.use_lock_version = use_lock_version.replace("^", "").replace("~", "")
 
-    def run(self):
-        # This is the main entry point for the worker.
-        try:
-            composer_url = self.prepare_composer_url(self.module.name)
-            response = requests.get(composer_url)
-            contents = '{}'
-            if response.status_code == 200:
-                contents = response.json()
-            elif response.status_code == 404:
-                raise ModuleNotFoundException(
-                    "The module {} is not found Possibly it is no more supported.".format(self.module.name))
-            self.module.transitive_entries = self.find_transitive_entries(contents)
-            self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
-            pprint(self.module.suitable_entries)
-        except ModuleNotFoundException as e:
-            print(e.message)
+    def run(self, semaphore: threading.Semaphore):
+        with semaphore:
+            # This is the main entry point for the worker.
+            try:
+                composer_url = self.prepare_composer_url(self.module.name)
+                response = requests.get(composer_url)
+                contents = '{}'
+                if response.status_code == 200:
+                    contents = response.json()
+                elif response.status_code == 404:
+                    raise ModuleNotFoundException(
+                        "The module {} is not found Possibly it is no more supported.".format(self.module.name))
+                self.module.transitive_entries = self.find_transitive_entries(contents)
+                self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
+                print(self.module.name)
+                pprint(self.module.suitable_entries)
+            except ModuleNotFoundException as e:
+                print(e.message)
 
     def prepare_composer_url(self, module_name: str) -> str:
         """
