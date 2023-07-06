@@ -7,12 +7,14 @@ setup(name='drupal-scout',
       keywords='drupal scout upgrade update',
       author='Andrew [R-Tech] Tsyganiuk',
       author_email='in0mad91@gmail.com',
-      packages=['drupal_scout'],
+      packages=['drupal_scout', 'drupal_scout.formatters'],
       scripts=['bin/drupal-scout'],
       install_requires=[
             'jq',
             'argparse',
-            'requests'
+            'requests',
+            'packaging',
+            'prettytable'
       ],
       test_suite='nose.collector',
       tests_require=['nose', 'coverage'],
