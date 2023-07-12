@@ -3,7 +3,6 @@
 import json
 import os
 from argparse import Namespace
-
 from .formatter import Formatter
 from packaging import version
 from drupal_scout.module import Module
@@ -31,7 +30,7 @@ class SuggestFormatter(Formatter):
             composer_json = json.load(f)
             for module in modules:
                 # module have more than one suitable entry, find the lowest version and replace the requirement version
-                if len(module.suitable_entries) > 1:
+                if len(module.suitable_entries) > 1 and module.active is True:
                     lowest_version = self.find_lowest_version(module.suitable_entries)
                     # find the module in the composer.json
                     for package in composer_json['require']:
