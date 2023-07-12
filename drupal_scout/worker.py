@@ -1,10 +1,9 @@
+import threading
 import jq
 import requests
-import threading
-from pprint import pprint
 from packaging import version
-from .module import Module
 from .exceptions import ModuleNotFoundException
+from .module import Module
 
 
 class Worker:
@@ -39,8 +38,6 @@ class Worker:
                         "The module {} is not found Possibly it is no more supported.".format(self.module.name))
                 self.module.transitive_entries = self.find_transitive_entries(contents)
                 self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
-                print(self.module.name)
-                pprint(self.module.suitable_entries)
             except ModuleNotFoundException as e:
                 print(e.message)
 
@@ -70,6 +67,7 @@ class Worker:
             if "||" in entry['requirement']:
                 entry['requirement'] = entry['requirement'].replace("^", "").replace(" ", "")
                 entry["requirement_parts"] = entry['requirement'].split("||")
+                entry['requirement'] = entry['requirement'].replace("||", " || ")
                 transitive_entries.append(entry)
         return transitive_entries
 
@@ -86,11 +84,11 @@ class Worker:
         for entry in transitive_entries:
             requirements_length = len(entry['requirement_parts'])
             if requirements_length == 1:
-                if version.parse(entry['requirement_parts'][0]) <= version.parse(self.current_core):
+                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major:
                     suitable_entries.append(entry)
             elif requirements_length == 2:
-                if version.parse(entry['requirement_parts'][0]) <= version.parse(self.current_core) <= version.parse(
-                        entry['requirement_parts'][1]):
+                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major \
+                        <= version.parse(entry['requirement_parts'][1]).major:
                     suitable_entries.append(entry)
             elif requirements_length == 3:
                 index_from = 0  # the index of the first version in the requirement
@@ -101,8 +99,8 @@ class Worker:
                 if current_major_version == 9:
                     index_from = 1
                     index_to = 2
-                if version.parse(entry['requirement_parts'][index_from]) >= version.parse(
-                        self.current_core) <= version.parse(entry['requirement_parts'][index_to]):
+                if version.parse(entry['requirement_parts'][index_from]).major >= version.parse(
+                        self.current_core).major <= version.parse(entry['requirement_parts'][index_to]).major:
                     suitable_entries.append(entry)
 
         # apply post-filtering if the lock version is used and the module version is specified
