@@ -16,6 +16,14 @@ setup(name='drupal-scout',
             'packaging',
             'prettytable'
       ],
+      extras_require={
+            'dev': [
+                    'nose',
+                    'coverage',
+                    'pipdeptree',
+                    'pip-autoremove'
+            ]
+      },
       test_suite='nose.collector',
       tests_require=['nose', 'coverage'],
       zip_safe=False)
