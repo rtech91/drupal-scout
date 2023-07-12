@@ -1,4 +1,5 @@
 import prettytable
+from termcolor import colored
 
 from .formatter import Formatter
 from drupal_scout.module import Module
@@ -26,9 +27,11 @@ class TableFormatter(Formatter):
             suitable_entries = []
             if len(module.suitable_entries) > 1:
                 for entry in module.suitable_entries:
-                    suitable_entries.append(f"{entry['version']} [{entry['requirement']}]")
+                    suitable_entries.append(f"v{entry['version']} [{entry['requirement']}]")
+            elif module.active is not True:
+                suitable_entries.append(colored(f"Module possibly not active", 'red'))
             else:
-                suitable_entries.append(f"No suitable entries found")
+                suitable_entries.append(colored(f"No suitable entries found", 'light_grey'))
             table.add_row([
                 module.name,
                 module.version,

@@ -24,6 +24,11 @@ class JSONFormatter(Formatter):
                 'version': module.version,
                 'suitable_entries': []
             })
+
+            # omit modules that are not active
+            if module.active is False:
+                continue
+
             for entry in module.suitable_entries:
                 output[-1]['suitable_entries'].append({
                     'version': entry['version'],

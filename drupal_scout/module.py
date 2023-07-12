@@ -7,6 +7,7 @@ class Module:
     version: str = None
     transitive_entries: list = None
     suitable_entries: list = None
+    active: bool = True
 
     def __init__(self, name: str):
         """

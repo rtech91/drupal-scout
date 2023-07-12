@@ -35,10 +35,11 @@ class Worker:
                     contents = response.json()
                 elif response.status_code == 404:
                     raise ModuleNotFoundException(
-                        "The module {} is not found Possibly it is no more supported.".format(self.module.name))
+                        "The module {} is not found. Possibly it is no more supported.".format(self.module.name))
                 self.module.transitive_entries = self.find_transitive_entries(contents)
                 self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
             except ModuleNotFoundException as e:
+                self.module.active = False
                 print(e.message)
 
     def prepare_composer_url(self, module_name: str) -> str:
