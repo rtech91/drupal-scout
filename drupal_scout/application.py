@@ -1,11 +1,10 @@
+from sys import exit
 import json
 import multiprocessing
 import os
 from argparse import ArgumentParser
-from sys import exit
-
 import jq
-
+from .formatters.formatterfactory import FormatterFactory
 from .exceptions import *
 from .module import Module
 from .workers_manager import WorkersManager
@@ -67,6 +66,10 @@ class Application:
                     number_of_threads=args.threads
                 )
                 workers_manager.run()
+
+                # output the results
+                formatter = FormatterFactory.get_formatter(args)
+                print(formatter.format(list(self.__modules.values())))
             else:
                 print("No modules were found in the composer.json file.")
 
@@ -78,6 +81,7 @@ class Application:
         """
         Get the configuration of the ArgumentParser object.
         :param parser:  the ArgumentParser object
+        :type  parser:  ArgumentParser
         :return:    the ArgumentParser object
         """
         parser.description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
@@ -104,6 +108,27 @@ class Application:
             type=int,
             # the default value is the number of CPU cores
             default=multiprocessing.cpu_count()
+        )
+
+        # "table" format is for human-readable output in the console
+        # "json" format is for machine-readable output
+        # "suggest" format is for the suggestion of the transitive versions of the modules
+        # in the separate composer.json file
+        parser.add_argument(
+            "-f",
+            "--format",
+            help="The output format. By default, the application will use the table format.",
+            choices=["table", "json", "suggest"],
+            default="table"
+        )
+
+        # the following argument is only available for the "suggest" format
+        parser.add_argument(
+            '-s',
+            '--save-dump',
+            help='Use in pair with --format suggest to dump the suggested composer.json file to the specified path.',
+            default=False,
+            action='store_true'
         )
         return parser
 
@@ -147,6 +172,7 @@ class Application:
                     # clear special characters from the version
                     self.__drupal_core_version = composer_json["require"]["drupal/core-recommended"] \
                         .replace("^", "").replace("~", "")
+        print("The Drupal core version is: " + self.__drupal_core_version)
 
     def get_required_modules(self, args):
         """
