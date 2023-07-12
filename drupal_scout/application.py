@@ -68,7 +68,7 @@ class Application:
                 workers_manager.run()
 
                 # output the results
-                formatter = FormatterFactory.get_formatter(args.format)
+                formatter = FormatterFactory.get_formatter(args)
                 print(formatter.format(list(self.__modules.values())))
             else:
                 print("No modules were found in the composer.json file.")
@@ -120,6 +120,15 @@ class Application:
             help="The output format. By default, the application will use the table format.",
             choices=["table", "json", "suggest"],
             default="table"
+        )
+
+        # the following argument is only available for the "suggest" format
+        parser.add_argument(
+            '-s',
+            '--save-dump',
+            help='Use in pair with --format suggest to dump the suggested composer.json file to the specified path.',
+            default=False,
+            action='store_true'
         )
         return parser
 

@@ -1,3 +1,5 @@
+from argparse import Namespace
+
 from .formatter import Formatter
 from .jsonformatter import JSONFormatter
 from .tableformatter import TableFormatter
@@ -10,15 +12,18 @@ class FormatterFactory:
     """
 
     @staticmethod
-    def get_formatter(name: str) -> Formatter:
+    def get_formatter(args: Namespace) -> Formatter:
         """
         Get the formatter object.
-        :param name:    the name of the formatter
-        :type name:     str
+        :param args:    the arguments passed to the application
+        :type args:     argparse.Namespace
         :return:        the formatter object
         :rtype:         Formatter
         """
-        if name == 'json':
+        format_name = args.format
+        if format_name == 'json':
             return JSONFormatter()
-        elif name == 'table':
+        elif format_name == 'table':
             return TableFormatter()
+        elif format_name == 'suggest':
+            return SuggestFormatter(args)
