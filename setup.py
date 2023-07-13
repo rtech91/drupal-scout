@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='drupal-scout',
-      version='0.4.2',
+      version='1.0.0',
       description='Scout out for transitive versions of Drupal modules for the upgrade of the core.',
       url='https://github.com/rtech91/drupal-scout',
       keywords='drupal scout upgrade update',
