@@ -7,6 +7,7 @@ setup(name='drupal-scout',
       keywords='drupal scout upgrade update',
       author='Andrew [R-Tech] Tsyganiuk',
       author_email='in0mad91@gmail.com',
+      license='MIT',
       packages=['drupal_scout', 'drupal_scout.formatters'],
       scripts=['bin/drupal-scout'],
       install_requires=[
