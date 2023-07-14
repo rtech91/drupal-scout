@@ -1,6 +1,6 @@
 [project]
 name = "drupal-scout"
-version = "1.0.1"
+version = "1.0.2"
 description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
 readme = "README.md"
 license = { file="LICENSE.txt", name="MIT" }

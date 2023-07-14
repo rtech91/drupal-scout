@@ -14,7 +14,7 @@ Search for Drupal module entries with transitive core version requirements to he
 - Choose between three output formats: table, json, and suggest.  
     - `table` format will output the data in the table format.  
     Example:
-    ![Table format example](screenshots/format_table_example.png)
+    ![Table format example](https://raw.githubusercontent.com/rtech91/drupal-scout/main/screenshots/format_table_example.png)
     - `json` format will output the raw data in the json format.  
     - `suggest` format will output the suggested composer.json file with the updated module version requirements.  
     It will also dump the suggested composer.json file to the specified path if the `--save-dump` argument is used.
