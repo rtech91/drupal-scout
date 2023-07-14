@@ -1,0 +1,52 @@
+[project]
+name = "drupal-scout"
+version = "1.0.1"
+description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
+readme = "README.md"
+license = { file="LICENSE.txt", name="MIT" }
+keywords = ["drupal", "scout", "upgrade", "core", "transitive", "dependencies"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.10"
+authors = [
+    { name="Andrew [R-Tech] Tsyhaniuk", email="in0mad91@gmail.com" }
+]
+dependencies = [
+    'jq',
+    'argparse',
+    'requests',
+    'packaging',
+    'prettytable',
+    'termcolor'
+]
+
+[project.optional-dependencies]
+dev = [
+    'nose',
+    'coverage',
+    'pipdeptree',
+    'pip-autoremove'
+]
+
+[project.urls]
+"Homepage" = "https://github.com/rtech91/drupal-scout"
+"Bug Tracker" = "https://github.com/rtech91/drupal-scout/issues"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+script-files = ["bin/drupal-scout"]
+
+[tool.setuptools.packages.find]
+exclude = ["tests"]
