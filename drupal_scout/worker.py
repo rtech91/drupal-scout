@@ -83,26 +83,13 @@ class Worker:
         suitable_entries = []
         current_major_version = version.parse(self.current_core).major
         for entry in transitive_entries:
-            requirements_length = len(entry['requirement_parts'])
-            if requirements_length == 1:
-                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major:
-                    suitable_entries.append(entry)
-            elif requirements_length == 2:
-                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major \
-                        <= version.parse(entry['requirement_parts'][1]).major:
-                    suitable_entries.append(entry)
-            elif requirements_length == 3:
-                index_from = 0  # the index of the first version in the requirement
-                index_to = 1  # the index of the second version in the requirement
-                # as for now Drupal has three major versions: 8, 9, 10
-                # so we need to check if the current core version is 8 or 9
-                # and then set the indexes accordingly
-                if current_major_version == 9:
-                    index_from = 1
-                    index_to = 2
-                if version.parse(entry['requirement_parts'][index_from]).major >= version.parse(
-                        self.current_core).major <= version.parse(entry['requirement_parts'][index_to]).major:
-                    suitable_entries.append(entry)
+            # Parse all requirement parts to extract major versions
+            requirement_major_versions = [version.parse(req_part).major for req_part in entry['requirement_parts']]
+            
+            # Check if the current major version is in the list of supported major versions
+            # The || operator means OR, so the module supports any of these versions
+            if current_major_version in requirement_major_versions:
+                suitable_entries.append(entry)
 
         # apply post-filtering if the lock version is used and the module version is specified
         if self.use_lock_version and self.module.version:
