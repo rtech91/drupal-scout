@@ -87,7 +87,7 @@ class Worker:
             requirement_major_versions = [version.parse(req_part).major for req_part in entry['requirement_parts']]
             
             # Check if the current major version is in the list of supported major versions
-            # The || operator means OR, so the module supports any of these versions
+            # The requirement uses || to indicate OR, so the module supports any of these versions
             if current_major_version in requirement_major_versions:
                 suitable_entries.append(entry)
 
