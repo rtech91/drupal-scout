@@ -22,11 +22,12 @@ class JSONFormatter(Formatter):
             output.append({
                 'name': module.name,
                 'version': module.version,
-                'suitable_entries': []
+                'suitable_entries': [],
+                'failed': module.failed
             })
 
-            # omit modules that are not active
-            if module.active is False:
+            # omit modules that are not active or failed
+            if module.active is False or module.failed:
                 continue
 
             for entry in module.suitable_entries:
