@@ -3,7 +3,6 @@ import json
 import multiprocessing
 import os
 from argparse import ArgumentParser
-import jq
 from .formatters.formatterfactory import FormatterFactory
 from .exceptions import *
 from .module import Module
@@ -157,8 +156,11 @@ class Application:
         if not args.no_lock:
             with open(os.path.join(args.directory, "composer.lock"), "r") as f:
                 composer_lock = json.load(f)
-                self.__drupal_core_version = jq.compile(".packages[] | select(.name == \"drupal/core\") | .version") \
-                    .input(composer_lock).first()
+                self.__drupal_core_version = next(
+                    (pkg.get('version') for pkg in composer_lock.get('packages', [])
+                     if pkg.get('name') == 'drupal/core'),
+                    None
+                )
         else:
             with open(os.path.join(args.directory, "composer.json"), "r") as f:
                 composer_json = json.load(f)
@@ -185,8 +187,10 @@ class Application:
         with open(os.path.join(args.directory, "composer.json"), "r") as f:
             composer_json = json.load(f)
             # load required modules, but only with drupal/* prefix and exclude modules with drupal/core prefix
-            found_modules = jq.compile(".require | keys | map(select(startswith(\"drupal/\"))) | map(select("
-                                       "startswith(\"drupal/core\") | not))").input(composer_json).first()
+            found_modules = [
+                k for k in composer_json.get('require', {}).keys()
+                if k.startswith('drupal/') and not k.startswith('drupal/core')
+            ]
             for module in found_modules:
                 self.__modules[module] = Module(module)
 
@@ -206,9 +210,11 @@ class Application:
             for module_name in self.__modules.keys():
                 module: Module = self.__modules.get(module_name)
                 # look for the module with name in the packages array
-                module_version = jq.compile(
-                    ".packages | map(select(.name == \"{}\")) | .[].version".format(module.name)) \
-                    .input(composer_lock).first()
+                module_version = next(
+                    (pkg.get('version') for pkg in composer_lock.get('packages', [])
+                     if pkg.get('name') == module.name),
+                    None
+                )
                 # save the module name and version in the versioned_modules array
                 module.version = module_version
                 self.__modules[module.name] = module

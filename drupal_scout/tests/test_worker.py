@@ -9,6 +9,56 @@ from drupal_scout.exceptions import ModuleNotFoundException
 
 
 class TestWorker(TestCase):
+    def test_find_transitive_entries(self):
+        """
+        Test native Python JSON parsing in find_transitive_entries.
+        """
+        module = Module(name='drupal/webform')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        response_contents = {
+            'packages': {
+                'drupal/webform': [
+                    {
+                        'version': '6.1.0',
+                        'require': {'drupal/core': '^9 || ^10'}
+                    },
+                    {
+                        'version': '5.0.0',
+                        'require': {'drupal/core': '^8 || ^9'}
+                    },
+                    {
+                        'version': '4.0.0',
+                        'require': {'some/other': '^1.0'}  # no drupal/core, should be excluded
+                    },
+                    {
+                        'version': '3.0.0'  # no require at all, should be excluded
+                    },
+                ]
+            }
+        }
+
+        entries = worker.find_transitive_entries(response_contents)
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]['version'], '6.1.0')
+        self.assertEqual(entries[0]['requirement'], '9 || 10')
+        self.assertEqual(entries[0]['requirement_parts'], ['9', '10'])
+        self.assertEqual(entries[1]['version'], '5.0.0')
+        self.assertEqual(entries[1]['requirement'], '8 || 9')
+        self.assertEqual(entries[1]['requirement_parts'], ['8', '9'])
+
+    def test_find_transitive_entries_empty_response(self):
+        """
+        Test find_transitive_entries with an empty dict (e.g. non-200 response).
+        """
+        module = Module(name='drupal/webform')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        entries = worker.find_transitive_entries({})
+
+        self.assertEqual(entries, [])
+
     def test_composer_url(self):
         """
         Test the URL composition.

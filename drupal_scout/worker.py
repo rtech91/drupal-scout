@@ -2,7 +2,6 @@ import logging
 import threading
 import time
 
-import jq
 import requests
 from packaging import version
 from .exceptions import ModuleNotFoundException
@@ -40,7 +39,7 @@ class Worker:
             try:
                 composer_url = self.prepare_composer_url(self.module.name)
                 response = self._get(composer_url)
-                contents = '{}'
+                contents = {}
                 if response.status_code == 200:
                     contents = response.json()
                 elif response.status_code == 404:
@@ -110,7 +109,7 @@ class Worker:
         """
         return 'https://packages.drupal.org/files/packages/8/p2/' + module_name + '.json'
 
-    def find_transitive_entries(self, response_contents: str) -> list:
+    def find_transitive_entries(self, response_contents: dict) -> list:
         """
         Find the transitive entries of the module relative to the current core version.
         :param response_contents:   the contents of the response
@@ -119,9 +118,12 @@ class Worker:
         :rtype:     list
         """
         transitive_entries = []
-        entries = jq.compile(
-            '.packages."' + self.module.name + '" | .[] | select(.require != null) | {"version", '
-                                               '"requirement":.require."drupal/core"}').input(response_contents).all()
+        packages = response_contents.get('packages', {}).get(self.module.name, [])
+        entries = [
+            {'version': pkg.get('version'), 'requirement': pkg.get('require', {}).get('drupal/core')}
+            for pkg in packages
+            if pkg.get('require') is not None and pkg.get('require', {}).get('drupal/core') is not None
+        ]
         for entry in entries:
             if "||" in entry['requirement']:
                 entry['requirement'] = entry['requirement'].replace("^", "").replace(" ", "")

@@ -21,7 +21,6 @@ authors = [
     { name="Andrew [R-Tech] Tsyhaniuk", email="in0mad91@gmail.com" }
 ]
 dependencies = [
-    'jq',
     'argparse',
     'requests',
     'packaging',
