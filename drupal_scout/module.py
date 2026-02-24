@@ -8,6 +8,7 @@ class Module:
     transitive_entries: list = None
     suitable_entries: list = None
     active: bool = True
+    failed: bool = False
 
     def __init__(self, name: str):
         """
