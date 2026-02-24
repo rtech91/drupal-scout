@@ -1,7 +1,10 @@
 from unittest import TestCase
+from unittest.mock import patch, MagicMock
+
+import requests
 
 from drupal_scout.module import Module
-from drupal_scout.worker import Worker
+from drupal_scout.worker import Worker, _MAX_RETRIES
 from drupal_scout.exceptions import ModuleNotFoundException
 
 
@@ -154,3 +157,83 @@ class TestWorker(TestCase):
         
         # Should find no entries for Drupal 11
         self.assertEqual(len(suitable), 0)
+
+    @patch('drupal_scout.worker.requests.get')
+    def test_get_retries_on_connection_error(self, mock_get):
+        """
+        Test that _get() retries on ConnectionError and marks module as failed after exhaustion.
+        """
+        mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        with self.assertRaises(requests.exceptions.ConnectionError):
+            worker._get(worker.prepare_composer_url(module.name))
+
+        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+
+    @patch('drupal_scout.worker.requests.get')
+    def test_get_retries_on_timeout(self, mock_get):
+        """
+        Test that _get() retries on Timeout and marks module as failed after exhaustion.
+        """
+        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        with self.assertRaises(requests.exceptions.Timeout):
+            worker._get(worker.prepare_composer_url(module.name))
+
+        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+
+    @patch('drupal_scout.worker.requests.get')
+    def test_get_retries_on_5xx(self, mock_get):
+        """
+        Test that _get() retries on server-side 5xx errors.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_get.return_value = mock_response
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        with self.assertRaises(requests.exceptions.HTTPError):
+            worker._get(worker.prepare_composer_url(module.name))
+
+        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+
+    @patch('drupal_scout.worker.time.sleep')
+    @patch('drupal_scout.worker.requests.get')
+    def test_run_marks_module_failed_on_connection_error(self, mock_get, mock_sleep):
+        """
+        Test that run() marks the module as failed when all retries are exhausted.
+        """
+        mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        import threading
+        semaphore = threading.Semaphore(1)
+        worker.run(semaphore)
+
+        self.assertTrue(module.failed)
+        self.assertTrue(module.active)  # active should remain True (not a 404)
+
+    @patch('drupal_scout.worker.time.sleep')
+    @patch('drupal_scout.worker.requests.get')
+    def test_get_succeeds_after_transient_failure(self, mock_get, mock_sleep):
+        """
+        Test that _get() succeeds when the first attempt fails but a later one succeeds.
+        """
+        error_response = MagicMock()
+        error_response.status_code = 503
+        success_response = MagicMock()
+        success_response.status_code = 200
+        mock_get.side_effect = [error_response, success_response]
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.0.0')
+
+        response = worker._get(worker.prepare_composer_url(module.name))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_get.call_count, 2)

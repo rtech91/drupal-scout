@@ -28,6 +28,8 @@ class TableFormatter(Formatter):
             if len(module.suitable_entries) > 1:
                 for entry in module.suitable_entries:
                     suitable_entries.append(f"v{entry['version']} [{entry['requirement']}]")
+            elif module.failed:
+                suitable_entries.append(colored(f"Failed to fetch module data", 'red'))
             elif module.active is not True:
                 suitable_entries.append(colored(f"Module possibly not active", 'red'))
             else:
