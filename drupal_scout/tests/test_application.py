@@ -4,14 +4,9 @@ import json
 from os import mkdir
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from drupal_scout.application import Application
-from drupal_scout.exceptions import (
-    ComposerV1Exception,
-    DirectoryNotFoundException,
-    NoComposerJSONFileException
-)
 from drupal_scout.module import Module
 
 
