@@ -11,8 +11,13 @@ class TestWorkersManager(TestCase):
     def test_run_with_custom_threads(self, mock_worker_class, mock_threading, mock_cpu_count):
         # Setup mocks
         mock_cpu_count.return_value = 8
-        mock_thread_instance = MagicMock()
-        mock_threading.Thread.return_value = mock_thread_instance
+        mock_threads = []
+        def create_mock_thread(*args, **kwargs):
+            mock_thread = MagicMock()
+            mock_threads.append(mock_thread)
+            return mock_thread
+        
+        mock_threading.Thread.side_effect = create_mock_thread
         
         # We pass 2 modules
         modules = [Module("module_1"), Module("module_2")]
@@ -32,9 +37,11 @@ class TestWorkersManager(TestCase):
         # Ensure threading.Thread was called to create a thread for each module
         self.assertEqual(mock_threading.Thread.call_count, 2)
         
-        # Ensure start and join were called on the threads
-        self.assertEqual(mock_thread_instance.start.call_count, 2)
-        self.assertEqual(mock_thread_instance.join.call_count, 2)
+        # Ensure start and join were called on the threads exactly once per unique thread
+        self.assertEqual(len(mock_threads), 2)
+        for thread in mock_threads:
+            thread.start.assert_called_once()
+            thread.join.assert_called_once()
 
     @patch('drupal_scout.workers_manager.cpu_count')
     @patch('drupal_scout.workers_manager.threading')
@@ -42,8 +49,13 @@ class TestWorkersManager(TestCase):
     def test_run_with_default_cpu_threads(self, mock_worker_class, mock_threading, mock_cpu_count):
         # Setup mocks
         mock_cpu_count.return_value = 8
-        mock_thread_instance = MagicMock()
-        mock_threading.Thread.return_value = mock_thread_instance
+        mock_threads = []
+        def create_mock_thread(*args, **kwargs):
+            mock_thread = MagicMock()
+            mock_threads.append(mock_thread)
+            return mock_thread
+        
+        mock_threading.Thread.side_effect = create_mock_thread
         
         modules = [Module("module_1")]
         
