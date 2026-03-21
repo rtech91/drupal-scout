@@ -1,4 +1,4 @@
-import unittest
+from unittest import TestCase
 from drupal_scout.exceptions import (
     ComposerV1Exception,
     DirectoryNotFoundException,
@@ -6,7 +6,7 @@ from drupal_scout.exceptions import (
     ModuleNotFoundException,
 )
 
-class TestExceptions(unittest.TestCase):
+class TestExceptions(TestCase):
 
     def test_composer_v1_exception_default_message(self):
         exc = ComposerV1Exception()
@@ -38,5 +38,3 @@ class TestExceptions(unittest.TestCase):
         self.assertEqual(exc.message, "Module X not found")
         self.assertEqual(str(exc), "Module X not found")
 
-if __name__ == '__main__':
-    unittest.main()
