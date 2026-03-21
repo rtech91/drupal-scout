@@ -15,9 +15,8 @@ class Application:
     The main application class.
     """
 
-    __modules = {}
-
     def __init__(self):
+        self.__modules = {}
         self.__drupal_core_version = "8.8"  # default and minimal supported Drupal core version for upgrade
 
     def run(self):
