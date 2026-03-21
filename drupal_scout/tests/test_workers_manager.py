@@ -1,9 +1,9 @@
-import unittest
+from unittest import TestCase
 from unittest.mock import patch, MagicMock
 from drupal_scout.workers_manager import WorkersManager
 from drupal_scout.module import Module
 
-class TestWorkersManager(unittest.TestCase):
+class TestWorkersManager(TestCase):
 
     @patch('drupal_scout.workers_manager.cpu_count')
     @patch('drupal_scout.workers_manager.threading')
@@ -56,5 +56,3 @@ class TestWorkersManager(unittest.TestCase):
         # Ensure Semaphore was initialized with the CPU count (8)
         mock_threading.Semaphore.assert_called_with(8)
 
-if __name__ == '__main__':
-    unittest.main()
