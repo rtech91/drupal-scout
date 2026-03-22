@@ -1,9 +1,19 @@
+import logging
 import threading
+import time
+
 import jq
 import requests
 from packaging import version
 from .exceptions import ModuleNotFoundException
 from .module import Module
+
+logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_BACKOFF_FACTOR = 1
+_RETRY_STATUS_CODES = frozenset([500, 502, 503, 504])
+_REQUEST_TIMEOUT = (5, 30)
 
 
 class Worker:
@@ -29,7 +39,7 @@ class Worker:
             # This is the main entry point for the worker.
             try:
                 composer_url = self.prepare_composer_url(self.module.name)
-                response = requests.get(composer_url)
+                response = self._get(composer_url)
                 contents = '{}'
                 if response.status_code == 200:
                     contents = response.json()
@@ -38,9 +48,57 @@ class Worker:
                         "The module {} is not found. Possibly it is no more supported.".format(self.module.name))
                 self.module.transitive_entries = self.find_transitive_entries(contents)
                 self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                logger.error("Module %s failed after %d attempts: %s", self.module.name, _MAX_RETRIES, e)
+                self.module.failed = True
             except ModuleNotFoundException as e:
                 self.module.active = False
                 print(e.message)
+
+    def _get(self, url: str) -> requests.Response:
+        """
+        Perform an HTTP GET request with retry logic and exponential backoff.
+        Retries on connection errors, timeouts, and server-side HTTP errors (5xx).
+        :param url:     the URL to fetch
+        :type url:      str
+        :return:        the HTTP response
+        :rtype:         requests.Response
+        :raises:        requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                        requests.exceptions.ChunkedEncodingError on exhausted retries
+        """
+        last_exception = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            if attempt > 1:
+                wait = _BACKOFF_FACTOR * (2 ** (attempt - 2))
+                logger.warning(
+                    "Retrying module %s... attempt %d/%d",
+                    self.module.name, attempt, _MAX_RETRIES
+                )
+                time.sleep(wait)
+            try:
+                response = requests.get(url, timeout=_REQUEST_TIMEOUT)
+                if response.status_code not in _RETRY_STATUS_CODES:
+                    return response
+                last_exception = requests.exceptions.HTTPError(
+                    f"HTTP {response.status_code} for {url}", response=response
+                )
+                if attempt < _MAX_RETRIES:
+                    logger.warning(
+                        "Retrying module %s... attempt %d/%d (HTTP %d)",
+                        self.module.name, attempt + 1, _MAX_RETRIES, response.status_code
+                    )
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as exc:
+                last_exception = exc
+                if attempt < _MAX_RETRIES:
+                    logger.warning(
+                        "Retrying module %s... attempt %d/%d (%s)",
+                        self.module.name, attempt + 1, _MAX_RETRIES, type(exc).__name__
+                    )
+        raise last_exception
 
     def prepare_composer_url(self, module_name: str) -> str:
         """
@@ -83,26 +141,13 @@ class Worker:
         suitable_entries = []
         current_major_version = version.parse(self.current_core).major
         for entry in transitive_entries:
-            requirements_length = len(entry['requirement_parts'])
-            if requirements_length == 1:
-                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major:
-                    suitable_entries.append(entry)
-            elif requirements_length == 2:
-                if version.parse(entry['requirement_parts'][0]).major >= version.parse(self.current_core).major \
-                        <= version.parse(entry['requirement_parts'][1]).major:
-                    suitable_entries.append(entry)
-            elif requirements_length == 3:
-                index_from = 0  # the index of the first version in the requirement
-                index_to = 1  # the index of the second version in the requirement
-                # as for now Drupal has three major versions: 8, 9, 10
-                # so we need to check if the current core version is 8 or 9
-                # and then set the indexes accordingly
-                if current_major_version == 9:
-                    index_from = 1
-                    index_to = 2
-                if version.parse(entry['requirement_parts'][index_from]).major >= version.parse(
-                        self.current_core).major <= version.parse(entry['requirement_parts'][index_to]).major:
-                    suitable_entries.append(entry)
+            # Parse all requirement parts to extract major versions
+            requirement_major_versions = [version.parse(req_part).major for req_part in entry['requirement_parts']]
+            
+            # Check if the current major version is in the list of supported major versions
+            # The requirement uses || to indicate OR, so the module supports any of these versions
+            if current_major_version in requirement_major_versions:
+                suitable_entries.append(entry)
 
         # apply post-filtering if the lock version is used and the module version is specified
         if self.use_lock_version and self.module.version:

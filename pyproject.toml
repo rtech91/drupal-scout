@@ -1,9 +1,9 @@
 [project]
 name = "drupal-scout"
-version = "1.0.2"
+version = "1.1.0"
 description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
 readme = "README.md"
-license = { file="LICENSE.txt", name="MIT" }
+license = { file = "LICENSE.txt" }
 keywords = ["drupal", "scout", "upgrade", "core", "transitive", "dependencies"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -17,25 +17,18 @@ classifiers = [
     "Topic :: Utilities",
 ]
 requires-python = ">=3.10"
-authors = [
-    { name="Andrew [R-Tech] Tsyhaniuk", email="in0mad91@gmail.com" }
-]
+authors = [{ name = "Andrew [R-Tech] Tsyhaniuk", email = "in0mad91@gmail.com" }]
 dependencies = [
     'jq',
     'argparse',
     'requests',
     'packaging',
     'prettytable',
-    'termcolor'
+    'termcolor',
 ]
 
 [project.optional-dependencies]
-dev = [
-    'nose',
-    'coverage',
-    'pipdeptree',
-    'pip-autoremove'
-]
+dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove']
 
 [project.urls]
 "Homepage" = "https://github.com/rtech91/drupal-scout"
