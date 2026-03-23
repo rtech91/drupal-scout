@@ -31,6 +31,10 @@ class Application:
             parser = self.get_argparser_configuration(parser)
             args = parser.parse_args()
 
+            if hasattr(args, "command") and args.command == "info":
+                self.handle_info(args)
+                return
+
             # check if the directory exists and whether the composer.json file exists in it
             if not os.path.isdir(args.directory):
                 raise DirectoryNotFoundException("The directory {} does not exist.".format(args.directory))
@@ -129,7 +133,78 @@ class Application:
             default=False,
             action='store_true'
         )
+
+        subparsers = parser.add_subparsers(dest="command")
+        info_parser = subparsers.add_parser('info', help='Diagnostic information about the tool and environment')
+
         return parser
+
+    def handle_info(self, args):
+        """
+        Handle the 'info' subcommand to provide diagnostic information about the tool and environment.
+        """
+        import importlib.metadata
+        import subprocess
+        import re
+
+        try:
+            version = importlib.metadata.version('drupal-scout')
+        except importlib.metadata.PackageNotFoundError:
+            try:
+                pyproject_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pyproject.toml")
+                with open(pyproject_path, "r") as f:
+                    content = f.read()
+                    match = re.search(r'version\s*=\s*"([^"]+)"', content)
+                    if match:
+                        version = match.group(1)
+                    else:
+                        version = "Unknown"
+            except Exception:
+                version = "Unknown"
+
+        jq_status = "NOT FOUND OR NOT FUNCTIONAL"
+        try:
+            subprocess.run(["jq", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            jq_status = "FOUND and FUNCTIONAL"
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+        print(f"Drupal Scout v{version}")
+        print("-" * 19)
+        print("Status:")
+        print(f"  - Version: {version} (verified from metadata)")
+        print(f"  - Dependencies: jq binary is {jq_status}")
+        print("  - Environment: ")
+        
+        composer_json = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.json")) else "NOT DETECTED"
+        composer_lock = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.lock")) else "NOT DETECTED"
+        
+        print(f"      * composer.json: {composer_json}")
+        print(f"      * composer.lock: {composer_lock}")
+        
+        composer2_status = "DETECTED" if self.is_composer2(args) else "NOT DETECTED"
+        print(f"      * Composer 2: {composer2_status}")
+        
+        core_version = "[Unknown]"
+        if composer_json == "DETECTED":
+            try:
+                if composer_lock == "DETECTED":
+                    args_mock = type('Args', (object,), {"no_lock": False, "directory": args.directory})()
+                else:
+                    args_mock = type('Args', (object,), {"no_lock": True, "directory": args.directory})()
+                
+                import sys, io
+                original_stdout = sys.stdout
+                sys.stdout = io.StringIO()
+                try:
+                    self.determine_drupal_core_version(args_mock)
+                    core_version = self.__drupal_core_version
+                finally:
+                    sys.stdout = original_stdout
+            except Exception:
+                pass
+                
+        print(f"      * Drupal Core Version: {core_version}")
 
     def is_composer2(self, args):
         """
