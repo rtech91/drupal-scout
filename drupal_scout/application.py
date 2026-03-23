@@ -89,6 +89,12 @@ class Application:
         """
         parser.description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
         parser.add_argument(
+            "-v",
+            "--version",
+            action="version",
+            version="drupal-scout {}".format(self.get_version())
+        )
+        parser.add_argument(
             "-d",
             "--directory",
             help="The directory of the Drupal installation.",
@@ -139,28 +145,38 @@ class Application:
 
         return parser
 
-    def handle_info(self, args):
+    def get_version(self):
         """
-        Handle the 'info' subcommand to provide diagnostic information about the tool and environment.
+        Identify the current version of the application dynamically.
+        :return: String representation of the version
         """
         import importlib.metadata
-        import subprocess
         import re
-
+        
         try:
-            version = importlib.metadata.version('drupal-scout')
+            return importlib.metadata.version('drupal-scout')
         except importlib.metadata.PackageNotFoundError:
             try:
-                pyproject_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pyproject.toml")
+                # relative path to find pyproject.toml in the source tree
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                pyproject_path = os.path.join(os.path.dirname(current_dir), "pyproject.toml")
                 with open(pyproject_path, "r") as f:
                     content = f.read()
                     match = re.search(r'version\s*=\s*"([^"]+)"', content)
                     if match:
-                        version = match.group(1)
-                    else:
-                        version = "Unknown"
+                        return match.group(1)
             except Exception:
-                version = "Unknown"
+                pass
+        return "Unknown"
+
+    def handle_info(self, args):
+        """
+        Handle the 'info' subcommand to provide diagnostic information about the tool and environment.
+        """
+        import subprocess
+
+        version = self.get_version()
+
 
         jq_status = "NOT FOUND OR NOT FUNCTIONAL"
         try:
