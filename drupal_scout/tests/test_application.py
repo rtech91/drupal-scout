@@ -1,10 +1,13 @@
 import argparse
 import tempfile
 import json
+from io import StringIO
 from os import mkdir
+from os.path import join
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from importlib.metadata import PackageNotFoundError
 
 from drupal_scout.application import Application
 from drupal_scout.module import Module
@@ -144,3 +147,135 @@ class TestApplication(TestCase):
         # Ensure Formatting happened
         MockFormatterFactory.get_formatter.assert_called_once()
         temp_dir.cleanup()
+
+    def test_handle_info(self):
+        """
+        Test handle_info method for diagnostic output correctness.
+        """
+        app = Application()
+        temp_dir = tempfile.TemporaryDirectory()
+        
+        # Create dummy composer.json
+        with open(join(temp_dir.name, 'composer.json'), 'w') as f:
+            json.dump({"require": {"drupal/core": "9.5.0"}}, f)
+            
+        args = argparse.Namespace(directory=temp_dir.name, command='info')
+        
+        # Mocking system dependencies
+        with patch('importlib.metadata.version') as mock_version, \
+             patch('subprocess.run') as mock_run, \
+             patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            
+            mock_version.return_value = "1.1.0"
+            mock_run.return_value = MagicMock() # success for jq check
+            
+            app.handle_info(args)
+            
+            output = mock_stdout.getvalue()
+            self.assertIn("Drupal Scout v1.1.0", output)
+            self.assertIn("Version: 1.1.0 (verified from metadata)", output)
+            self.assertIn("Dependencies: jq binary is FOUND and FUNCTIONAL", output)
+            self.assertIn("composer.json: DETECTED", output)
+            self.assertIn("Drupal Core Version: 9.5.0", output)
+
+        temp_dir.cleanup()
+
+    @patch('drupal_scout.application.Application.handle_info')
+    def test_run_calls_handle_info(self, mock_handle_info):
+        """
+        Test that app.run() correctly routes to handle_info when the 'info' command is passed.
+        """
+        app = Application()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Note: Argparse typically expects info as the command
+            # We mock sys.argv to simulate: drupal-scout -d /tmp info
+            with patch('sys.argv', ['drupal-scout', '-d', temp_dir, 'info']):
+                app.run()
+                mock_handle_info.assert_called_once()
+
+    def test_handle_info_fallback_version(self):
+        """
+        Test handle_info fallback to pyproject.toml when package metadata is missing.
+        """
+        app = Application()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a mock pyproject.toml in the temp dir
+            # We need to mock os.path.abspath to point to a place where we can find pyproject.toml
+            # but it is easier to just mock 'open' for that specific path or mock the logic.
+            
+            args = argparse.Namespace(directory=temp_dir, command='info')
+            
+            with patch('importlib.metadata.version', side_effect=PackageNotFoundError), \
+                 patch('subprocess.run') as mock_run, \
+                 patch('sys.stdout', new_callable=StringIO) as mock_stdout, \
+                 patch('builtins.open', patch.multiple('builtins', open=open)) as mock_open:
+                
+                # We need to selectively mock open for pyproject.toml
+                original_open = open
+                def side_effect(path, *args, **kwargs):
+                    if 'pyproject.toml' in str(path):
+                        return StringIO('version = "1.2.3-fallback"')
+                    return original_open(path, *args, **kwargs)
+                
+                with patch('builtins.open', side_effect=side_effect):
+                    app.handle_info(args)
+                    output = mock_stdout.getvalue()
+                    self.assertIn("Drupal Scout v1.2.3-fallback", output)
+
+    def test_handle_info_jq_missing(self):
+        """
+        Test handle_info when jq is missing.
+        """
+        app = Application()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = argparse.Namespace(directory=temp_dir, command='info')
+            with patch('importlib.metadata.version', return_value="1.1.0"), \
+                 patch('subprocess.run', side_effect=FileNotFoundError), \
+                 patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+                
+                app.handle_info(args)
+                output = mock_stdout.getvalue()
+                self.assertIn("Dependencies: jq binary is NOT FOUND OR NOT FUNCTIONAL", output)
+
+    def test_run_directory_not_found(self):
+        """
+        Test app.run() raises DirectoryNotFoundException and exits for non-existent directory.
+        """
+        app = Application()
+        with patch('sys.argv', ['drupal-scout', '-d', '/non/existent/path/for/test']):
+            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+                with self.assertRaises(SystemExit) as cm:
+                    app.run()
+                self.assertEqual(cm.exception.code, 1)
+                output = mock_stdout.getvalue()
+                self.assertIn("does not exist", output)
+
+    def test_run_no_composer_json(self):
+        """
+        Test app.run() raises NoComposerJSONFileException and exits when composer.json is missing.
+        """
+        app = Application()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
+                with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+                    with self.assertRaises(SystemExit) as cm:
+                        app.run()
+                    self.assertEqual(cm.exception.code, 1)
+                    output = mock_stdout.getvalue()
+                    self.assertIn("does not contain the composer.json file", output)
+
+    def test_run_version(self):
+        """
+        Test that app.run() correctly outputs the version when --version is called.
+        """
+        app = Application()
+        # Mocking get_version to return a predictable string
+        with patch('drupal_scout.application.Application.get_version', return_value="1.1.0"):
+            with patch('sys.argv', ['drupal-scout', '--version']):
+                with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+                    # argparse version action usually prints to stdout and exits with 0
+                    with self.assertRaises(SystemExit) as cm:
+                        app.run()
+                    self.assertEqual(cm.exception.code, 0)
+                    output = mock_stdout.getvalue()
+                    self.assertIn("drupal-scout 1.1.0", output)
