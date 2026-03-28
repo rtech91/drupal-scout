@@ -110,7 +110,7 @@ class Worker:
         """
         return 'https://packages.drupal.org/files/packages/8/p2/' + module_name + '.json'
 
-    def find_transitive_entries(self, response_contents: str) -> list:
+    def find_transitive_entries(self, response_contents: dict) -> list:
         """
         Find the transitive entries of the module relative to the current core version.
         :param response_contents:   the contents of the response
@@ -151,8 +151,8 @@ class Worker:
 
         # apply post-filtering if the lock version is used and the module version is specified
         if self.use_lock_version and self.module.version:
-            suitable_entries = filter(
-                lambda current_entry: version.parse(current_entry['version']) >= version.parse(self.module.version),
-                suitable_entries
-            )
-        return list(suitable_entries)
+            suitable_entries = [
+                entry for entry in suitable_entries
+                if version.parse(entry['version']) >= version.parse(self.module.version)
+            ]
+        return suitable_entries

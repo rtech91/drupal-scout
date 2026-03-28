@@ -8,5 +8,5 @@ class Formatter(ABC):
     Abstract class for formatters
     """
     @abstractmethod
-    def format(self, modules: [Module]) -> str:
+    def format(self, modules: list[Module]) -> str:
         pass
