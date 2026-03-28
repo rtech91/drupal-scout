@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
+import asyncio
 from drupal_scout import Application
 
 app = Application()
-app.run()
+asyncio.run(app.run())

@@ -1,8 +1,9 @@
-from sys import exit
+from sys import exit, stderr
+import asyncio
 import json
-import multiprocessing
 import os
 from argparse import ArgumentParser
+from os import cpu_count
 import jq
 from .formatters.formatterfactory import FormatterFactory
 from .exceptions import *
@@ -19,7 +20,7 @@ class Application:
         self.__modules = {}
         self.__drupal_core_version = "8.8"  # default and minimal supported Drupal core version for upgrade
 
-    def run(self):
+    async def run(self):
         # This is the main entry point for the application.
         # It should check the existence of the composer.json and composer.lock files,
         # parse the composer.json file to get the required modules,
@@ -57,24 +58,26 @@ class Application:
                 if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
                     self.determine_module_versions(args)
                 elif args.no_lock:
-                    print("The composer.lock file was not used to determine the installed versions of the modules.")
+                    print("The composer.lock file was not used to determine the installed versions of the modules.",
+                          file=stderr)
                     print(
-                        "The only Drupal core version will be use to determine the transitive versions of the modules.")
+                        "The only Drupal core version will be use to determine the transitive versions of the modules.",
+                        file=stderr)
 
                 # create the workers manager
                 workers_manager = WorkersManager(
                     modules=list(self.__modules.values()),
                     current_core=self.__drupal_core_version,
                     use_lock_version=not args.no_lock,
-                    number_of_threads=args.threads
+                    concurrency_limit=args.limit
                 )
-                workers_manager.run()
+                await workers_manager.run()
 
                 # output the results
                 formatter = FormatterFactory.get_formatter(args)
                 print(formatter.format(list(self.__modules.values())))
             else:
-                print("No modules were found in the composer.json file.")
+                print("No modules were found in the composer.json file.", file=stderr)
 
         except (ComposerV1Exception, DirectoryNotFoundException, NoComposerJSONFileException) as e:
             print(e.message)
@@ -110,13 +113,13 @@ class Application:
             default=False
         )
         parser.add_argument(
-            "-t",
-            "--threads",
-            help="The number of threads to use for the concurrent requests and data parsing. By default, "
-                 "the application will use all available threads",
+            "-l",
+            "--limit",
+            help="The concurrency limit for the asynchronous requests and data parsing. By default, "
+                 "the application will use all available CPU cores.",
             type=int,
             # the default value is the number of CPU cores
-            default=multiprocessing.cpu_count()
+            default=cpu_count()
         )
 
         # "table" format is for human-readable output in the console
@@ -262,7 +265,7 @@ class Application:
                     # clear special characters from the version
                     self.__drupal_core_version = composer_json["require"]["drupal/core-recommended"] \
                         .replace("^", "").replace("~", "")
-        print("The Drupal core version is: " + self.__drupal_core_version)
+        print("The Drupal core version is: " + self.__drupal_core_version, file=stderr)
 
     def get_required_modules(self, args):
         """
@@ -288,7 +291,7 @@ class Application:
         :rtype:           list
         """
         if len(self.__modules) == 0:
-            print("No modules to check.")
+            print("No modules to check.", file=stderr)
             exit(0)
 
         with open(os.path.join(args.directory, "composer.lock"), "r") as f:
