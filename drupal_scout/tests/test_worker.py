@@ -372,15 +372,20 @@ def test_find_transitive_entries_with_jq():
                 {"version": "6.1.0", "require": {"drupal/core": "^9.4 || ^10"}},
                 {"version": "6.2.0", "require": {"drupal/core": "^10"}},
                 {"version": "5.0.0"},  # no 'require' key — should be skipped by jq
+                {"version": "7.0.0", "require": {"drupal/core": "^10|^11"}},  # single pipe
             ]
         }
     }
 
     entries = worker.find_transitive_entries(response_contents)
 
-    # Only the entry with || in the requirement should be returned
-    assert len(entries) == 1
+    # Entries with | or || in the requirement should be returned
+    assert len(entries) == 2
     assert entries[0]['version'] == '6.1.0'
     assert 'requirement_parts' in entries[0]
     assert '9.4' in entries[0]['requirement_parts']
     assert '10' in entries[0]['requirement_parts']
+    # Single pipe entry
+    assert entries[1]['version'] == '7.0.0'
+    assert '10' in entries[1]['requirement_parts']
+    assert '11' in entries[1]['requirement_parts']

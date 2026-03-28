@@ -123,10 +123,10 @@ class Worker:
             '.packages."' + self.module.name + '" | .[] | select(.require != null) | {"version", '
                                                '"requirement":.require."drupal/core"}').input(response_contents).all()
         for entry in entries:
-            if "||" in entry['requirement']:
+            if "|" in entry['requirement']:
                 entry['requirement'] = entry['requirement'].replace("^", "").replace(" ", "")
-                entry["requirement_parts"] = entry['requirement'].split("||")
-                entry['requirement'] = entry['requirement'].replace("||", " || ")
+                entry["requirement_parts"] = [p for p in entry['requirement'].split("|") if p]
+                entry['requirement'] = " || ".join(entry['requirement_parts'])
                 transitive_entries.append(entry)
         return transitive_entries
 
