@@ -12,7 +12,7 @@ class FormatterFactory:
     """
 
     @staticmethod
-    def get_formatter(args: Namespace) -> Formatter:
+    def get_formatter(args: Namespace) -> Formatter | None:
         """
         Get the formatter object.
         :param args:    the arguments passed to the application
@@ -27,3 +27,4 @@ class FormatterFactory:
             return TableFormatter()
         elif format_name == 'suggest':
             return SuggestFormatter(args)
+        return None

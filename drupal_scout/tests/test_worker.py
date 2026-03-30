@@ -1,7 +1,9 @@
+import asyncio
 from unittest import TestCase
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
-import requests
+import aiohttp
+import pytest
 
 from drupal_scout.module import Module
 from drupal_scout.worker import Worker, _MAX_RETRIES
@@ -158,82 +160,232 @@ class TestWorker(TestCase):
         # Should find no entries for Drupal 11
         self.assertEqual(len(suitable), 0)
 
-    @patch('drupal_scout.worker.requests.get')
-    def test_get_retries_on_connection_error(self, mock_get):
-        """
-        Test that _get() retries on ConnectionError and marks module as failed after exhaustion.
-        """
-        mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
-        module = Module(name='drupal/test_module')
-        worker = Worker(module=module, current_core='10.0.0')
 
-        with self.assertRaises(requests.exceptions.ConnectionError):
-            worker._get(worker.prepare_composer_url(module.name))
+@pytest.mark.asyncio
+async def test_get_retries_on_connection_error():
+    """
+    Test that _get() retries on ClientConnectorError and raises after exhaustion.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
 
-        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+    with patch('aiohttp.ClientSession.get', side_effect=aiohttp.ClientConnectorError(
+            connection_key=MagicMock(), os_error=OSError("Connection refused"))):
+        with pytest.raises(aiohttp.ClientConnectorError):
+            await worker._get(worker.prepare_composer_url(module.name))
 
-    @patch('drupal_scout.worker.requests.get')
-    def test_get_retries_on_timeout(self, mock_get):
-        """
-        Test that _get() retries on Timeout and marks module as failed after exhaustion.
-        """
-        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
-        module = Module(name='drupal/test_module')
-        worker = Worker(module=module, current_core='10.0.0')
 
-        with self.assertRaises(requests.exceptions.Timeout):
-            worker._get(worker.prepare_composer_url(module.name))
+@pytest.mark.asyncio
+async def test_get_retries_on_timeout():
+    """
+    Test that _get() retries on TimeoutError and raises after exhaustion.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
 
-        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+    with patch('aiohttp.ClientSession.get', side_effect=asyncio.TimeoutError("Request timed out")):
+        with pytest.raises(asyncio.TimeoutError):
+            await worker._get(worker.prepare_composer_url(module.name))
 
-    @patch('drupal_scout.worker.requests.get')
-    def test_get_retries_on_5xx(self, mock_get):
-        """
-        Test that _get() retries on server-side 5xx errors.
-        """
+
+@pytest.mark.asyncio
+async def test_get_retries_on_5xx():
+    """
+    Test that _get() retries on server-side 5xx errors.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    call_count = 0
+
+    def make_503_response():
         mock_response = MagicMock()
-        mock_response.status_code = 503
-        mock_get.return_value = mock_response
-        module = Module(name='drupal/test_module')
-        worker = Worker(module=module, current_core='10.0.0')
+        mock_response.status = 503
+        mock_response.request_info = MagicMock()
+        mock_response.history = ()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+        return mock_response
 
-        with self.assertRaises(requests.exceptions.HTTPError):
-            worker._get(worker.prepare_composer_url(module.name))
+    def make_session():
+        nonlocal call_count
+        call_count += 1
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=make_503_response())
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        return mock_session
 
-        self.assertEqual(mock_get.call_count, _MAX_RETRIES)
+    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: make_session()):
+        with pytest.raises(aiohttp.ClientResponseError):
+            await worker._get(worker.prepare_composer_url(module.name))
 
-    @patch('drupal_scout.worker.time.sleep')
-    @patch('drupal_scout.worker.requests.get')
-    def test_run_marks_module_failed_on_connection_error(self, mock_get, mock_sleep):
-        """
-        Test that run() marks the module as failed when all retries are exhausted.
-        """
-        mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
-        module = Module(name='drupal/test_module')
-        worker = Worker(module=module, current_core='10.0.0')
+    assert call_count == _MAX_RETRIES
 
-        import threading
-        semaphore = threading.Semaphore(1)
-        worker.run(semaphore)
 
-        self.assertTrue(module.failed)
-        self.assertTrue(module.active)  # active should remain True (not a 404)
+@pytest.mark.asyncio
+async def test_run_marks_module_failed_on_connection_error():
+    """
+    Test that run() marks the module as failed when all retries are exhausted.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
 
-    @patch('drupal_scout.worker.time.sleep')
-    @patch('drupal_scout.worker.requests.get')
-    def test_get_succeeds_after_transient_failure(self, mock_get, mock_sleep):
-        """
-        Test that _get() succeeds when the first attempt fails but a later one succeeds.
-        """
-        error_response = MagicMock()
-        error_response.status_code = 503
-        success_response = MagicMock()
-        success_response.status_code = 200
-        mock_get.side_effect = [error_response, success_response]
-        module = Module(name='drupal/test_module')
-        worker = Worker(module=module, current_core='10.0.0')
+    def make_failing_session():
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=aiohttp.ClientConnectorError(
+            connection_key=MagicMock(), os_error=OSError("Connection refused")))
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        return mock_session
 
-        response = worker._get(worker.prepare_composer_url(module.name))
+    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: make_failing_session()):
+        semaphore = asyncio.Semaphore(1)
+        await worker.run(semaphore)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_get.call_count, 2)
+    assert module.failed is True
+    assert module.active is True  # active should remain True (not a 404)
+
+
+@pytest.mark.asyncio
+async def test_get_succeeds_after_transient_failure():
+    """
+    Test that _get() succeeds when the first attempt fails but a later one succeeds.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    # First call: 503 response
+    error_response = MagicMock()
+    error_response.status = 503
+    error_response.request_info = MagicMock()
+    error_response.history = ()
+    error_response.__aenter__ = AsyncMock(return_value=error_response)
+    error_response.__aexit__ = AsyncMock(return_value=False)
+
+    # Second call: 200 response
+    success_response = MagicMock()
+    success_response.status = 200
+    success_response.json = AsyncMock(return_value={"packages": {}})
+    success_response.__aenter__ = AsyncMock(return_value=success_response)
+    success_response.__aexit__ = AsyncMock(return_value=False)
+
+    error_session = MagicMock()
+    error_session.get = MagicMock(return_value=error_response)
+    error_session.__aenter__ = AsyncMock(return_value=error_session)
+    error_session.__aexit__ = AsyncMock(return_value=False)
+
+    success_session = MagicMock()
+    success_session.get = MagicMock(return_value=success_response)
+    success_session.__aenter__ = AsyncMock(return_value=success_session)
+    success_session.__aexit__ = AsyncMock(return_value=False)
+
+    sessions = iter([error_session, success_session])
+    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: next(sessions)):
+        result = await worker._get(worker.prepare_composer_url(module.name))
+
+    assert result == {"packages": {}}
+
+
+@pytest.mark.asyncio
+async def test_run_success_flow():
+    """
+    Test that run() populates transitive and suitable entries on a successful fetch.
+    Covers the success path in run(): lines 42-43.
+    """
+    module = Module(name='drupal/test_module')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    fake_response = {
+        "packages": {
+            "drupal/test_module": [
+                {"version": "1.0.0", "require": {"drupal/core": "^9 || ^10"}},
+                {"version": "2.0.0", "require": {"drupal/core": "^10"}},
+            ]
+        }
+    }
+
+    with patch.object(worker, '_get', new_callable=AsyncMock, return_value=fake_response):
+        semaphore = asyncio.Semaphore(1)
+        await worker.run(semaphore)
+
+    assert len(module.transitive_entries) > 0
+    assert len(module.suitable_entries) > 0
+    assert module.failed is False
+    assert module.active is True
+
+
+@pytest.mark.asyncio
+async def test_run_marks_module_inactive_on_404():
+    """
+    Test that run() sets module.active = False when ModuleNotFoundException is raised.
+    Covers lines 47-49 in run().
+    """
+    module = Module(name='drupal/nonexistent_module')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    with patch.object(worker, '_get', new_callable=AsyncMock,
+                      side_effect=ModuleNotFoundException("The module drupal/nonexistent_module is not found.")):
+        semaphore = asyncio.Semaphore(1)
+        await worker.run(semaphore)
+
+    assert module.active is False
+    assert module.failed is False
+
+
+@pytest.mark.asyncio
+async def test_get_raises_module_not_found_on_404():
+    """
+    Test that _get() raises ModuleNotFoundException when the server returns 404.
+    Covers lines 74 and 92 in _get().
+    """
+    module = Module(name='drupal/missing_module')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    mock_response = MagicMock()
+    mock_response.status = 404
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_response)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: mock_session):
+        with pytest.raises(ModuleNotFoundException) as exc_info:
+            await worker._get(worker.prepare_composer_url(module.name))
+        assert "drupal/missing_module" in exc_info.value.message
+
+
+def test_find_transitive_entries_with_jq():
+    """
+    Test find_transitive_entries() using real jq parsing on a realistic payload.
+    Covers lines 120-130.
+    """
+    module = Module(name='drupal/webform')
+    worker = Worker(module=module, current_core='10.0.0')
+
+    response_contents = {
+        "packages": {
+            "drupal/webform": [
+                {"version": "6.1.0", "require": {"drupal/core": "^9.4 || ^10"}},
+                {"version": "6.2.0", "require": {"drupal/core": "^10"}},
+                {"version": "5.0.0"},  # no 'require' key — should be skipped by jq
+                {"version": "7.0.0", "require": {"drupal/core": "^10|^11"}},  # single pipe
+            ]
+        }
+    }
+
+    entries = worker.find_transitive_entries(response_contents)
+
+    # Entries with | or || in the requirement should be returned
+    assert len(entries) == 2
+    assert entries[0]['version'] == '6.1.0'
+    assert 'requirement_parts' in entries[0]
+    assert '9.4' in entries[0]['requirement_parts']
+    assert '10' in entries[0]['requirement_parts']
+    # Single pipe entry
+    assert entries[1]['version'] == '7.0.0'
+    assert '10' in entries[1]['requirement_parts']
+    assert '11' in entries[1]['requirement_parts']

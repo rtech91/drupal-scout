@@ -1,9 +1,8 @@
+import asyncio
 import logging
-import threading
-import time
 
+import aiohttp
 import jq
-import requests
 from packaging import version
 from .exceptions import ModuleNotFoundException
 from .module import Module
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 3
 _BACKOFF_FACTOR = 1
 _RETRY_STATUS_CODES = frozenset([500, 502, 503, 504])
-_REQUEST_TIMEOUT = (5, 30)
+_REQUEST_TIMEOUT = aiohttp.ClientTimeout(sock_connect=5, sock_read=30)
 
 
 class Worker:
@@ -30,45 +29,36 @@ class Worker:
         """
         self.current_core = current_core.replace("^", "").replace("~", "")
         self.module = module
-        self.use_lock_version = False
+        self.use_lock_version: str | bool = False
         if type(use_lock_version) is str:
             self.use_lock_version = use_lock_version.replace("^", "").replace("~", "")
 
-    def run(self, semaphore: threading.Semaphore):
-        with semaphore:
+    async def run(self, semaphore: asyncio.Semaphore):
+        async with semaphore:
             # This is the main entry point for the worker.
             try:
                 composer_url = self.prepare_composer_url(self.module.name)
-                response = self._get(composer_url)
-                contents = '{}'
-                if response.status_code == 200:
-                    contents = response.json()
-                elif response.status_code == 404:
-                    raise ModuleNotFoundException(
-                        "The module {} is not found. Possibly it is no more supported.".format(self.module.name))
+                contents = await self._get(composer_url)
                 self.module.transitive_entries = self.find_transitive_entries(contents)
                 self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
-            except (requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout,
-                    requests.exceptions.ChunkedEncodingError) as e:
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 logger.error("Module %s failed after %d attempts: %s", self.module.name, _MAX_RETRIES, e)
                 self.module.failed = True
             except ModuleNotFoundException as e:
                 self.module.active = False
                 print(e.message)
 
-    def _get(self, url: str) -> requests.Response:
+    async def _get(self, url: str) -> dict:
         """
         Perform an HTTP GET request with retry logic and exponential backoff.
         Retries on connection errors, timeouts, and server-side HTTP errors (5xx).
         :param url:     the URL to fetch
         :type url:      str
-        :return:        the HTTP response
-        :rtype:         requests.Response
-        :raises:        requests.exceptions.ConnectionError, requests.exceptions.Timeout,
-                        requests.exceptions.ChunkedEncodingError on exhausted retries
+        :return:        the parsed JSON response
+        :rtype:         dict
+        :raises:        aiohttp.ClientError, asyncio.TimeoutError on exhausted retries
         """
-        last_exception = None
+        last_exception: BaseException | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             if attempt > 1:
                 wait = _BACKOFF_FACTOR * (2 ** (attempt - 2))
@@ -76,28 +66,38 @@ class Worker:
                     "Retrying module %s... attempt %d/%d",
                     self.module.name, attempt, _MAX_RETRIES
                 )
-                time.sleep(wait)
+                await asyncio.sleep(wait)
             try:
-                response = requests.get(url, timeout=_REQUEST_TIMEOUT)
-                if response.status_code not in _RETRY_STATUS_CODES:
-                    return response
-                last_exception = requests.exceptions.HTTPError(
-                    f"HTTP {response.status_code} for {url}", response=response
-                )
-                if attempt < _MAX_RETRIES:
-                    logger.warning(
-                        "Retrying module %s... attempt %d/%d (HTTP %d)",
-                        self.module.name, attempt + 1, _MAX_RETRIES, response.status_code
-                    )
-            except (requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout,
-                    requests.exceptions.ChunkedEncodingError) as exc:
+                async with aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session:
+                    async with session.get(url) as response:
+                        if response.status == 404:
+                            raise ModuleNotFoundException(
+                                "The module {} is not found. Possibly it is no more supported.".format(self.module.name))
+                        if response.status in _RETRY_STATUS_CODES:
+                            last_exception = aiohttp.ClientResponseError(
+                                response.request_info,
+                                response.history,
+                                status=response.status,
+                                message=f"HTTP {response.status} for {url}",
+                            )
+                            if attempt < _MAX_RETRIES:
+                                logger.warning(
+                                    "Retrying module %s... attempt %d/%d (HTTP %d)",
+                                    self.module.name, attempt + 1, _MAX_RETRIES, response.status
+                                )
+                            continue
+                        contents = await response.json()
+                        return contents
+            except ModuleNotFoundException:
+                raise
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 last_exception = exc
                 if attempt < _MAX_RETRIES:
                     logger.warning(
                         "Retrying module %s... attempt %d/%d (%s)",
                         self.module.name, attempt + 1, _MAX_RETRIES, type(exc).__name__
                     )
+        assert last_exception is not None
         raise last_exception
 
     def prepare_composer_url(self, module_name: str) -> str:
@@ -110,7 +110,7 @@ class Worker:
         """
         return 'https://packages.drupal.org/files/packages/8/p2/' + module_name + '.json'
 
-    def find_transitive_entries(self, response_contents: str) -> list:
+    def find_transitive_entries(self, response_contents: dict) -> list:
         """
         Find the transitive entries of the module relative to the current core version.
         :param response_contents:   the contents of the response
@@ -123,10 +123,10 @@ class Worker:
             '.packages."' + self.module.name + '" | .[] | select(.require != null) | {"version", '
                                                '"requirement":.require."drupal/core"}').input(response_contents).all()
         for entry in entries:
-            if "||" in entry['requirement']:
+            if "|" in entry['requirement']:
                 entry['requirement'] = entry['requirement'].replace("^", "").replace(" ", "")
-                entry["requirement_parts"] = entry['requirement'].split("||")
-                entry['requirement'] = entry['requirement'].replace("||", " || ")
+                entry["requirement_parts"] = [p for p in entry['requirement'].split("|") if p]
+                entry['requirement'] = " || ".join(entry['requirement_parts'])
                 transitive_entries.append(entry)
         return transitive_entries
 
@@ -151,8 +151,8 @@ class Worker:
 
         # apply post-filtering if the lock version is used and the module version is specified
         if self.use_lock_version and self.module.version:
-            suitable_entries = filter(
-                lambda current_entry: version.parse(current_entry['version']) >= version.parse(self.module.version),
-                suitable_entries
-            )
-        return list(suitable_entries)
+            suitable_entries = [
+                entry for entry in suitable_entries
+                if version.parse(entry['version']) >= version.parse(self.module.version)
+            ]
+        return suitable_entries

@@ -3,10 +3,6 @@ class Module:
     Represents a Drupal module.
     """
 
-    name: str = None
-    version: str = None
-    transitive_entries: list = None
-    suitable_entries: list = None
     active: bool = True
     failed: bool = False
 
@@ -17,5 +13,6 @@ class Module:
         :type  name:    str
         """
         self.name = name
-        self.transitive_entries = []
-        self.suitable_entries = []
+        self.version: str | None = None
+        self.transitive_entries: list = []
+        self.suitable_entries: list = []

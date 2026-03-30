@@ -11,7 +11,7 @@ class TableFormatter(Formatter):
     Formats the output as a table.
     """
 
-    def format(self, modules: [Module]) -> str:
+    def format(self, modules: list[Module]) -> str:
         """
         Format the output as a table.
         :param modules:     the list of modules
@@ -22,7 +22,7 @@ class TableFormatter(Formatter):
         header = ['Name', 'Version', 'Suitable entries']
         table = prettytable.PrettyTable(field_names=header, align='l', hrules=prettytable.ALL)
         table.preserve_internal_border = True
-        items = []
+        items: list[str] = []
         for module in modules:
             suitable_entries = []
             if len(module.suitable_entries) > 1:

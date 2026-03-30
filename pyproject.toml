@@ -16,19 +16,19 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Andrew [R-Tech] Tsyhaniuk", email = "in0mad91@gmail.com" }]
 dependencies = [
     'jq',
     'argparse',
-    'requests',
+    'aiohttp',
     'packaging',
     'prettytable',
     'termcolor',
 ]
 
 [project.optional-dependencies]
-dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove']
+dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove', 'pytest-asyncio']
 
 [project.urls]
 "Homepage" = "https://github.com/rtech91/drupal-scout"
@@ -43,3 +43,9 @@ script-files = ["bin/drupal-scout"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]
+
+[tool.coverage.run]
+source = ["drupal_scout"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
