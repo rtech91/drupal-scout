@@ -68,6 +68,14 @@ class TestApplication(TestCase):
         self.assertEqual(args.format, 'json')
         self.assertFalse(args.save_dump)
 
+    def test_get_argparser_default_limit(self):
+        app = Application()
+        parser = argparse.ArgumentParser()
+        parser = app.get_argparser_configuration(parser)
+
+        args = parser.parse_args([])
+        self.assertEqual(args.limit, 10)
+
     def test_get_required_modules(self):
         app = Application()
         temp_dir = tempfile.TemporaryDirectory()
