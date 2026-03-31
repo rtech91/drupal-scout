@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import aiohttp
 import pytest
+from aioresponses import aioresponses
 
 from drupal_scout.module import Module
 from drupal_scout.worker import Worker, _MAX_RETRIES
@@ -168,11 +169,20 @@ async def test_get_retries_on_connection_error():
     """
     module = Module(name='drupal/test_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    with patch('aiohttp.ClientSession.get', side_effect=aiohttp.ClientConnectorError(
-            connection_key=MagicMock(), os_error=OSError("Connection refused"))):
-        with pytest.raises(aiohttp.ClientConnectorError):
-            await worker._get(worker.prepare_composer_url(module.name))
+    with patch('asyncio.sleep', new_callable=AsyncMock):
+        with aioresponses() as mocked:
+            mocked.get(
+                url,
+                exception=aiohttp.ClientConnectorError(
+                    connection_key=MagicMock(),
+                    os_error=OSError("Connection refused")
+                ),
+                repeat=_MAX_RETRIES
+            )
+            with pytest.raises(aiohttp.ClientConnectorError):
+                await worker._get(url)
 
 
 @pytest.mark.asyncio
@@ -182,10 +192,17 @@ async def test_get_retries_on_timeout():
     """
     module = Module(name='drupal/test_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    with patch('aiohttp.ClientSession.get', side_effect=asyncio.TimeoutError("Request timed out")):
-        with pytest.raises(asyncio.TimeoutError):
-            await worker._get(worker.prepare_composer_url(module.name))
+    with patch('asyncio.sleep', new_callable=AsyncMock):
+        with aioresponses() as mocked:
+            mocked.get(
+                url,
+                exception=asyncio.TimeoutError("Request timed out"),
+                repeat=_MAX_RETRIES
+            )
+            with pytest.raises(asyncio.TimeoutError):
+                await worker._get(url)
 
 
 @pytest.mark.asyncio
@@ -195,32 +212,13 @@ async def test_get_retries_on_5xx():
     """
     module = Module(name='drupal/test_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    call_count = 0
-
-    def make_503_response():
-        mock_response = MagicMock()
-        mock_response.status = 503
-        mock_response.request_info = MagicMock()
-        mock_response.history = ()
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=False)
-        return mock_response
-
-    def make_session():
-        nonlocal call_count
-        call_count += 1
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=make_503_response())
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-        return mock_session
-
-    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: make_session()):
-        with pytest.raises(aiohttp.ClientResponseError):
-            await worker._get(worker.prepare_composer_url(module.name))
-
-    assert call_count == _MAX_RETRIES
+    with patch('asyncio.sleep', new_callable=AsyncMock):
+        with aioresponses() as mocked:
+            mocked.get(url, status=503, repeat=_MAX_RETRIES)
+            with pytest.raises(aiohttp.ClientResponseError):
+                await worker._get(url)
 
 
 @pytest.mark.asyncio
@@ -230,18 +228,19 @@ async def test_run_marks_module_failed_on_connection_error():
     """
     module = Module(name='drupal/test_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    def make_failing_session():
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(side_effect=aiohttp.ClientConnectorError(
-            connection_key=MagicMock(), os_error=OSError("Connection refused")))
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-        return mock_session
-
-    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: make_failing_session()):
-        semaphore = asyncio.Semaphore(1)
-        await worker.run(semaphore)
+    with patch('asyncio.sleep', new_callable=AsyncMock):
+        with aioresponses() as mocked:
+            mocked.get(
+                url,
+                exception=aiohttp.ClientConnectorError(
+                    connection_key=MagicMock(),
+                    os_error=OSError("Connection refused")
+                )
+            )
+            semaphore = asyncio.Semaphore(1)
+            await worker.run(semaphore)
 
     assert module.failed is True
     assert module.active is True  # active should remain True (not a 404)
@@ -254,35 +253,13 @@ async def test_get_succeeds_after_transient_failure():
     """
     module = Module(name='drupal/test_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    # First call: 503 response
-    error_response = MagicMock()
-    error_response.status = 503
-    error_response.request_info = MagicMock()
-    error_response.history = ()
-    error_response.__aenter__ = AsyncMock(return_value=error_response)
-    error_response.__aexit__ = AsyncMock(return_value=False)
-
-    # Second call: 200 response
-    success_response = MagicMock()
-    success_response.status = 200
-    success_response.json = AsyncMock(return_value={"packages": {}})
-    success_response.__aenter__ = AsyncMock(return_value=success_response)
-    success_response.__aexit__ = AsyncMock(return_value=False)
-
-    error_session = MagicMock()
-    error_session.get = MagicMock(return_value=error_response)
-    error_session.__aenter__ = AsyncMock(return_value=error_session)
-    error_session.__aexit__ = AsyncMock(return_value=False)
-
-    success_session = MagicMock()
-    success_session.get = MagicMock(return_value=success_response)
-    success_session.__aenter__ = AsyncMock(return_value=success_session)
-    success_session.__aexit__ = AsyncMock(return_value=False)
-
-    sessions = iter([error_session, success_session])
-    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: next(sessions)):
-        result = await worker._get(worker.prepare_composer_url(module.name))
+    with patch('asyncio.sleep', new_callable=AsyncMock):
+        with aioresponses() as mocked:
+            mocked.get(url, status=503)
+            mocked.get(url, payload={"packages": {}})
+            result = await worker._get(url)
 
     assert result == {"packages": {}}
 
@@ -341,20 +318,12 @@ async def test_get_raises_module_not_found_on_404():
     """
     module = Module(name='drupal/missing_module')
     worker = Worker(module=module, current_core='10.0.0')
+    url = worker.prepare_composer_url(module.name)
 
-    mock_response = MagicMock()
-    mock_response.status = 404
-    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-    mock_response.__aexit__ = AsyncMock(return_value=False)
-
-    mock_session = MagicMock()
-    mock_session.get = MagicMock(return_value=mock_response)
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-
-    with patch('aiohttp.ClientSession', side_effect=lambda **kwargs: mock_session):
+    with aioresponses() as mocked:
+        mocked.get(url, status=404)
         with pytest.raises(ModuleNotFoundException) as exc_info:
-            await worker._get(worker.prepare_composer_url(module.name))
+            await worker._get(url)
         assert "drupal/missing_module" in exc_info.value.message
 
 
