@@ -3,7 +3,6 @@ import asyncio
 import json
 import os
 from argparse import ArgumentParser
-from os import cpu_count
 import jq
 from .formatters.formatterfactory import FormatterFactory
 from .exceptions import *
@@ -183,11 +182,10 @@ class Application:
         parser.add_argument(
             "-l",
             "--limit",
-            help="The concurrency limit for the asynchronous requests and data parsing. By default, "
-                 "the application will use all available CPU cores.",
+            help="Maximum number of concurrent network requests. This prevents overwhelming the upstream API "
+                "and hitting rate limits. Default: 10.",
             type=int,
-            # the default value is the number of CPU cores
-            default=cpu_count()
+            default=10
         )
 
         # "table" format is for human-readable output in the console
