@@ -36,52 +36,120 @@ class Application:
                 self.handle_info(args)
                 return
 
-            # check if the directory exists and whether the composer.json file exists in it
-            if not os.path.isdir(args.directory):
-                raise DirectoryNotFoundException("The directory {} does not exist.".format(args.directory))
+            # Targeted scan: specific modules provided via CLI
+            if args.modules:
+                await self._run_targeted_scan(args)
+                return
 
-            # check if the directory contains the composer.json file
-            if not os.path.isfile(os.path.join(args.directory, "composer.json")):
-                raise NoComposerJSONFileException()
-
-            # check if the Drupal project uses Composer 2
-            if not self.is_composer2(args):
-                raise ComposerV1Exception()
-
-            # determine the Drupal core version
-            self.determine_drupal_core_version(args)
-
-            # get the required modules from the composer.json file
-            self.get_required_modules(args)
-
-            if len(self.__modules) > 0:
-                if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
-                    self.determine_module_versions(args)
-                elif args.no_lock:
-                    print("The composer.lock file was not used to determine the installed versions of the modules.",
-                          file=stderr)
-                    print(
-                        "The only Drupal core version will be use to determine the transitive versions of the modules.",
-                        file=stderr)
-
-                # create the workers manager
-                workers_manager = WorkersManager(
-                    modules=list(self.__modules.values()),
-                    current_core=self.__drupal_core_version,
-                    use_lock_version=not args.no_lock,
-                    concurrency_limit=args.limit
-                )
-                await workers_manager.run()
-
-                # output the results
-                formatter = FormatterFactory.get_formatter(args)
-                print(formatter.format(list(self.__modules.values())))
-            else:
-                print("No modules were found in the composer.json file.", file=stderr)
+            # Full environment scan
+            await self._run_environment_scan(args)
 
         except (ComposerV1Exception, DirectoryNotFoundException, NoComposerJSONFileException) as e:
             print(e.message)
             exit(1)
+
+    async def _run_targeted_scan(self, args) -> None:
+        """Scan one or more specific modules and optionally use local lock metadata."""
+        self.__drupal_core_version = self._resolve_targeted_core_version(args)
+        for name in args.modules:
+            self.__modules[name] = Module(name)
+
+        use_lock_version = False
+        composer_lock_path = os.path.join(args.directory, "composer.lock")
+        if not args.no_lock and os.path.isfile(composer_lock_path):
+            self.determine_module_versions(args)
+            use_lock_version = True
+        elif not args.no_lock:
+            print(
+                "composer.lock was not found; running targeted scan without installed-version protection.",
+                file=stderr
+            )
+        else:
+            print(
+                "The composer.lock file was not used to determine installed versions of targeted modules.",
+                file=stderr
+            )
+
+        workers_manager = WorkersManager(
+            modules=list(self.__modules.values()),
+            current_core=self.__drupal_core_version,
+            use_lock_version=use_lock_version,
+            concurrency_limit=args.limit
+        )
+        await workers_manager.run()
+
+        formatter = FormatterFactory.get_formatter(args)
+        if formatter:
+            print(formatter.format(list(self.__modules.values())))
+
+    def _resolve_targeted_core_version(self, args) -> str:
+        """Resolve Drupal core version for targeted scans with CLI override + environment fallback."""
+        if args.core:
+            resolved_core = args.core.replace("^", "").replace("~", "")
+            print(f"Using Drupal core version from --core: {resolved_core}", file=stderr)
+            return resolved_core
+
+        try:
+            self.determine_drupal_core_version(args)
+            if self.__drupal_core_version:
+                return self.__drupal_core_version
+        except FileNotFoundError:
+            pass
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+        print(
+            "Unable to determine Drupal core version. Provide --core or run inside a project directory with "
+            "composer.lock/composer.json.",
+            file=stderr,
+        )
+        exit(1)
+
+    async def _run_environment_scan(self, args) -> None:
+        """Scan all modules discovered from the Drupal project's composer files."""
+        # check if the directory exists and whether the composer.json file exists in it
+        if not os.path.isdir(args.directory):
+            raise DirectoryNotFoundException("The directory {} does not exist.".format(args.directory))
+
+        # check if the directory contains the composer.json file
+        if not os.path.isfile(os.path.join(args.directory, "composer.json")):
+            raise NoComposerJSONFileException()
+
+        # check if the Drupal project uses Composer 2
+        if not self.is_composer2(args):
+            raise ComposerV1Exception()
+
+        # determine the Drupal core version
+        self.determine_drupal_core_version(args)
+
+        # get the required modules from the composer.json file
+        self.get_required_modules(args)
+
+        if len(self.__modules) > 0:
+            if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
+                self.determine_module_versions(args)
+            elif args.no_lock:
+                print("The composer.lock file was not used to determine the installed versions of the modules.",
+                      file=stderr)
+                print(
+                    "The only Drupal core version will be use to determine the transitive versions of the modules.",
+                    file=stderr)
+
+            # create the workers manager
+            workers_manager = WorkersManager(
+                modules=list(self.__modules.values()),
+                current_core=self.__drupal_core_version,
+                use_lock_version=not args.no_lock,
+                concurrency_limit=args.limit
+            )
+            await workers_manager.run()
+
+            # output the results
+            formatter = FormatterFactory.get_formatter(args)
+            if formatter:
+                print(formatter.format(list(self.__modules.values())))
+        else:
+            print("No modules were found in the composer.json file.", file=stderr)
 
     def get_argparser_configuration(self, parser) -> ArgumentParser:
         """
@@ -141,6 +209,25 @@ class Application:
             help='Use in pair with --format suggest to dump the suggested composer.json file to the specified path.',
             default=False,
             action='store_true'
+        )
+
+        parser.add_argument(
+            '-c',
+            '--core',
+            help='Optional Drupal core version override for targeted module scans (e.g. 10.0.0). '
+                  'If omitted, the core version is auto-detected from composer.lock/composer.json in --directory.',
+            type=str,
+            default=None
+        )
+
+        parser.add_argument(
+            '-m',
+            '--modules',
+            nargs='+',
+            help='One or more specific Drupal module names to scan (e.g. drupal/webform drupal/ctools). '
+                 'When provided, the full environment scan is skipped. The tool still uses composer.lock from '
+                 '--directory for installed-version protection when available.',
+            default=[]
         )
 
         subparsers = parser.add_subparsers(dest="command")
@@ -297,11 +384,17 @@ class Application:
         with open(os.path.join(args.directory, "composer.lock"), "r") as f:
             composer_lock = json.load(f)
             for module_name in self.__modules.keys():
-                module: Module = self.__modules.get(module_name)
+                module = self.__modules.get(module_name)
+                if module is None:
+                    continue
                 # look for the module with name in the packages array
-                module_version = jq.compile(
-                    ".packages | map(select(.name == \"{}\")) | .[].version".format(module.name)) \
-                    .input(composer_lock).first()
+                module_version = None
+                try:
+                    module_version = jq.compile(
+                        ".packages | map(select(.name == \"{}\")) | .[].version".format(module.name)) \
+                        .input(composer_lock).first()
+                except StopIteration:
+                    module_version = None
                 # save the module name and version in the versioned_modules array
                 module.version = module_version
                 self.__modules[module.name] = module

@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove', 'pytest-asyncio']
+dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove', 'pytest-asyncio', 'aioresponses']
 
 [project.urls]
 "Homepage" = "https://github.com/rtech91/drupal-scout"

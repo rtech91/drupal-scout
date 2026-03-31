@@ -454,3 +454,200 @@ def test_determine_module_versions_with_empty_modules():
             assert exc_info.value.code == 0
             output = mock_stderr.getvalue()
             assert "No modules to check" in output
+
+class TestArgparserModulesArgument(TestCase):
+    """Verify the CLI accepts optional --modules and --core arguments."""
+
+    def test_modules_arg_single(self):
+        app = Application()
+        parser = argparse.ArgumentParser()
+        parser = app.get_argparser_configuration(parser)
+        args = parser.parse_args(['--core', '10.0.0', '--modules', 'drupal/paragraphs'])
+        self.assertEqual(args.modules, ['drupal/paragraphs'])
+        self.assertEqual(args.core, '10.0.0')
+
+    def test_modules_arg_multiple(self):
+        app = Application()
+        parser = argparse.ArgumentParser()
+        parser = app.get_argparser_configuration(parser)
+        args = parser.parse_args(['--core', '10.0.0', '--modules', 'drupal/webform', 'drupal/ctools'])
+        self.assertEqual(args.modules, ['drupal/webform', 'drupal/ctools'])
+
+    def test_no_modules_arg(self):
+        """When no positional modules are given, the list should be empty."""
+        app = Application()
+        parser = argparse.ArgumentParser()
+        parser = app.get_argparser_configuration(parser)
+        args = parser.parse_args(['-d', '/tmp', '-n'])
+        self.assertEqual(args.modules, [])
+
+    def test_core_arg_default(self):
+        """--core should default to None when not provided."""
+        app = Application()
+        parser = argparse.ArgumentParser()
+        parser = app.get_argparser_configuration(parser)
+        args = parser.parse_args([])
+        self.assertIsNone(args.core)
+
+
+@pytest.mark.asyncio
+async def test_run_single_module_targeted_scan():
+    """Passing one module via CLI triggers a targeted scan."""
+    app = Application()
+    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/paragraphs']):
+            await app.run()
+
+        MockWorkersManager.assert_called_once()
+        call_kwargs = MockWorkersManager.call_args
+        modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+        assert len(modules_arg) == 1
+        assert modules_arg[0].name == 'drupal/paragraphs'
+        MockFormatterFactory.get_formatter.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_multiple_modules_targeted_scan():
+    """Passing multiple modules triggers concurrent processing of all specified modules."""
+    app = Application()
+    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/webform', 'drupal/ctools']):
+            await app.run()
+
+        MockWorkersManager.assert_called_once()
+        call_kwargs = MockWorkersManager.call_args
+        modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+        assert len(modules_arg) == 2
+        names = {m.name for m in modules_arg}
+        assert names == {'drupal/webform', 'drupal/ctools'}
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_requires_core_version():
+    """Targeted scan can auto-detect core from local environment when --core is omitted."""
+    app = Application()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
+            json.dump({
+                "packages": [
+                    {"name": "drupal/core", "version": "10.1.0"},
+                    {"name": "drupal/webform", "version": "6.2.0"}
+                ]
+            }, f)
+
+        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+            MockWorkersManager.return_value.run = AsyncMock()
+            with patch('sys.argv', ['drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform']):
+                await app.run()
+
+            call_kwargs = MockWorkersManager.call_args
+            assert call_kwargs.kwargs.get('current_core') == '10.1.0'
+            assert call_kwargs.kwargs.get('use_lock_version') is True
+            modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+            assert modules_arg[0].version == '6.2.0'
+            MockFormatterFactory.get_formatter.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_skips_composer_parsing():
+    """Targeted scan should not parse project required modules or check Composer 2."""
+    app = Application()
+    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/webform']):
+            with patch.object(app, 'get_required_modules') as mock_get_modules, \
+                 patch.object(app, 'determine_module_versions') as mock_determine_versions, \
+                 patch.object(app, 'is_composer2') as mock_is_composer2:
+                await app.run()
+                mock_get_modules.assert_not_called()
+                mock_is_composer2.assert_not_called()
+                mock_determine_versions.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_with_format_json():
+    """Targeted scan respects --format flag."""
+    app = Application()
+    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '-f', 'json', '--modules', 'drupal/webform']):
+            await app.run()
+        call_args = MockFormatterFactory.get_formatter.call_args[0][0]
+        assert call_args.format == 'json'
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_core_override_wins_over_auto_detection():
+    """When both local metadata and --core are available, --core must win."""
+    app = Application()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
+            json.dump({
+                "packages": [
+                    {"name": "drupal/core", "version": "9.5.0"},
+                    {"name": "drupal/webform", "version": "6.2.0"}
+                ]
+            }, f)
+
+        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+            MockWorkersManager.return_value.run = AsyncMock()
+            with patch('sys.argv', [
+                'drupal-scout', '-d', temp_dir, '--core', '10.0.0', '--modules', 'drupal/webform'
+            ]):
+                await app.run()
+
+            call_kwargs = MockWorkersManager.call_args
+            assert call_kwargs.kwargs.get('current_core') == '10.0.0'
+            assert call_kwargs.kwargs.get('use_lock_version') is True
+            MockFormatterFactory.get_formatter.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_without_local_module_version_keeps_upstream_only_logic():
+    """If a targeted module is not installed locally, scan still proceeds with upstream data only."""
+    app = Application()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
+            json.dump({
+                "packages": [
+                    {"name": "drupal/core", "version": "10.1.0"},
+                    {"name": "drupal/token", "version": "1.5.0"}
+                ]
+            }, f)
+
+        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
+             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+            MockWorkersManager.return_value.run = AsyncMock()
+            with patch('sys.argv', [
+                'drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform'
+            ]):
+                await app.run()
+
+            call_kwargs = MockWorkersManager.call_args
+            modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+            assert modules_arg[0].name == 'drupal/webform'
+            assert modules_arg[0].version is None
+            assert call_kwargs.kwargs.get('use_lock_version') is True
+            MockFormatterFactory.get_formatter.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_targeted_scan_exits_when_core_cannot_be_detected():
+    """When --core is missing and no local composer metadata exists, targeted scan must fail."""
+    app = Application()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch('sys.argv', ['drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform']):
+            with patch('drupal_scout.application.stderr', new_callable=StringIO) as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    await app.run()
+                assert exc_info.value.code == 1
+                output = mock_stderr.getvalue()
+                assert "Unable to determine Drupal core version" in output
