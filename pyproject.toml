@@ -25,6 +25,7 @@ dependencies = [
     'packaging',
     'prettytable',
     'termcolor',
+    'fastmcp',
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,9 @@ dev = [
 [project.urls]
 "Homepage" = "https://github.com/rtech91/drupal-scout"
 "Bug Tracker" = "https://github.com/rtech91/drupal-scout/issues"
+
+[project.scripts]
+drupal-scout-mcp = "drupal_scout.mcp_server:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
