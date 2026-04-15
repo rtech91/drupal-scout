@@ -118,7 +118,7 @@ async def get_diagnostic_info(directory: str = ".") -> dict:
                 else:
                     detect_args = Namespace(directory=directory, no_lock=True)
                 app.determine_drupal_core_version(detect_args)
-                result["drupal_core_version"] = app._Application__drupal_core_version
+                result["drupal_core_version"] = app.drupal_core_version
             except Exception:
                 pass
 
@@ -183,11 +183,11 @@ async def perform_full_project_scan(
         except Exception as e:
             return {"error": f"Failed to determine Drupal core version: {e}"}
 
-        core_version = app._Application__drupal_core_version
+        core_version = app.drupal_core_version
 
         # Get required modules
         app.get_required_modules(args_ns)
-        modules = app._Application__modules
+        modules = app.modules
 
         if len(modules) == 0:
             return {
@@ -276,8 +276,8 @@ async def scan_specific_modules(
             resolved_core = core.replace("^", "").replace("~", "")
         else:
             # Auto-detect from local project files
-            resolved_core = _auto_detect_core(app, directory)
-            if resolved_core is None:
+            detected_core = _auto_detect_core(app, directory)
+            if detected_core is None:
                 return {
                     "error": (
                         "Unable to determine Drupal core version. "
@@ -285,6 +285,7 @@ async def scan_specific_modules(
                         "composer.json exists in the directory."
                     )
                 }
+            resolved_core = detected_core
 
         # Build module objects
         module_objects = {}
@@ -296,10 +297,10 @@ async def scan_specific_modules(
         composer_lock_path = os.path.join(directory, "composer.lock")
         if os.path.isfile(composer_lock_path):
             # Use Application's method to populate versions from lock
-            app._Application__modules = module_objects
+            app.modules = module_objects
             args_ns = Namespace(directory=directory, no_lock=False)
             app.determine_module_versions(args_ns)
-            module_objects = app._Application__modules
+            module_objects = app.modules
             lock_file_used = True
 
         # Run workers
@@ -374,7 +375,7 @@ async def generate_composer_upgrade_json(
 
         # Determine core version
         if core:
-            app._Application__drupal_core_version = core.replace("^", "").replace("~", "")
+            app.drupal_core_version = core.replace("^", "").replace("~", "")
         else:
             try:
                 # Prefer lock file for core version detection
@@ -386,11 +387,11 @@ async def generate_composer_upgrade_json(
             except Exception as e:
                 return {"error": f"Failed to determine Drupal core version: {e}"}
 
-        core_version = app._Application__drupal_core_version
+        core_version = app.drupal_core_version
 
         # Get required modules
         app.get_required_modules(args_ns)
-        modules_dict = app._Application__modules
+        modules_dict = app.modules
 
         if len(modules_dict) == 0:
             return {
@@ -453,7 +454,7 @@ def _auto_detect_core(app: Application, directory: str) -> Optional[str]:
         else:
             return None
         app.determine_drupal_core_version(detect_args)
-        return app._Application__drupal_core_version
+        return app.drupal_core_version
     except Exception:
         return None
 

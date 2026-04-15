@@ -19,6 +19,22 @@ class Application:
         self.__modules = {}
         self.__drupal_core_version = "8.8"  # default and minimal supported Drupal core version for upgrade
 
+    @property
+    def modules(self) -> dict:
+        return self.__modules
+
+    @modules.setter
+    def modules(self, value: dict) -> None:
+        self.__modules = value
+
+    @property
+    def drupal_core_version(self) -> str:
+        return self.__drupal_core_version
+
+    @drupal_core_version.setter
+    def drupal_core_version(self, value: str) -> None:
+        self.__drupal_core_version = value
+
     async def run(self):
         # This is the main entry point for the application.
         # It should check the existence of the composer.json and composer.lock files,

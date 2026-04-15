@@ -45,7 +45,7 @@ class TestApplication(TestCase):
         args = argparse.Namespace(directory=temp_dir.name, no_lock=True)
         app.determine_drupal_core_version(args)
         # ^8.8.5 gets stripped to 8.8.5
-        self.assertEqual(app._Application__drupal_core_version, '8.8.5')
+        self.assertEqual(app.drupal_core_version, '8.8.5')
         
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
         Path(temp_dir.name + '/composer.lock').touch()
@@ -53,7 +53,7 @@ class TestApplication(TestCase):
         with open(temp_dir.name + '/composer.lock', 'w') as f:
             f.write('{"packages": [{"name": "drupal/core", "version": "8.8.7"}]}')
         app.determine_drupal_core_version(args)
-        self.assertEqual(app._Application__drupal_core_version, '8.8.7')
+        self.assertEqual(app.drupal_core_version, '8.8.7')
         temp_dir.cleanup()
 
     def test_get_argparser_configuration(self):
@@ -97,7 +97,7 @@ class TestApplication(TestCase):
         app.get_required_modules(args)
         
         # Verify that only drupal/* (excluding core) are added
-        modules = app._Application__modules
+        modules = app.modules
         self.assertIn("drupal/webform", modules)
         self.assertIn("drupal/token", modules)
         self.assertNotIn("drupal/core", modules)
@@ -107,7 +107,7 @@ class TestApplication(TestCase):
     def test_determine_module_versions(self):
         app = Application()
         # Pretend we already loaded modules
-        app._Application__modules = {
+        app.modules = {
             "drupal/token": Module("drupal/token"),
             "drupal/webform": Module("drupal/webform")
         }
@@ -126,7 +126,7 @@ class TestApplication(TestCase):
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
         app.determine_module_versions(args)
         
-        modules = app._Application__modules
+        modules = app.modules
         self.assertEqual(modules["drupal/token"].version, "1.5.0")
         self.assertEqual(modules["drupal/webform"].version, "6.1.2")
         temp_dir.cleanup()
@@ -352,7 +352,7 @@ async def test_run_with_lock_file():
 
             MockWorkersManager.assert_called_once()
             # Verify determine_module_versions was reached (lock was used)
-            modules = app._Application__modules
+            modules = app.modules
             assert modules["drupal/token"].version == "1.5.0"
 
 
@@ -452,7 +452,7 @@ def test_determine_module_versions_with_empty_modules():
     """
     app = Application()
     # Ensure __modules is empty
-    app._Application__modules = {}
+    app.modules = {}
 
     with tempfile.TemporaryDirectory() as temp_dir:
         args = argparse.Namespace(directory=temp_dir)
