@@ -1,12 +1,18 @@
 from unittest import TestCase
-
+from io import StringIO
+from rich.console import Console
 from drupal_scout.formatters.tableformatter import TableFormatter
 from drupal_scout.module import Module
-
 
 class TestTableFormatter(TestCase):
     def setUp(self):
         self.formatter = TableFormatter()
+        self.console = Console(file=StringIO(), width=100, force_terminal=False, color_system=None)
+
+    def _render_to_string(self, table) -> str:
+        with self.console.capture() as capture:
+            self.console.print(table)
+        return capture.get()
 
     def test_format_module_with_multiple_entries(self):
         """
@@ -20,7 +26,8 @@ class TestTableFormatter(TestCase):
             {'version': '6.3.0', 'requirement': '^10'},
         ]
 
-        result = self.formatter.format([module])
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
 
         self.assertIn('drupal/webform', result)
         self.assertIn('6.2.0', result)
@@ -37,7 +44,8 @@ class TestTableFormatter(TestCase):
         module.version = '1.0.0'
         module.failed = True
 
-        result = self.formatter.format([module])
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
 
         self.assertIn('drupal/broken', result)
         self.assertIn('Failed to fetch module data', result)
@@ -50,7 +58,8 @@ class TestTableFormatter(TestCase):
         module.version = '2.0.0'
         module.active = False
 
-        result = self.formatter.format([module])
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
 
         self.assertIn('drupal/old_module', result)
         self.assertIn('Module possibly not active', result)
@@ -62,7 +71,8 @@ class TestTableFormatter(TestCase):
         module = Module(name='drupal/no_match')
         module.version = '3.0.0'
 
-        result = self.formatter.format([module])
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
 
         self.assertIn('drupal/no_match', result)
         self.assertIn('No suitable entries found', result)

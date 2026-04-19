@@ -45,7 +45,7 @@ class TestApplication(TestCase):
         args = argparse.Namespace(directory=temp_dir.name, no_lock=True)
         app.determine_drupal_core_version(args)
         # ^8.8.5 gets stripped to 8.8.5
-        self.assertEqual(app._Application__drupal_core_version, '8.8.5')
+        self.assertEqual(app.drupal_core_version, '8.8.5')
         
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
         Path(temp_dir.name + '/composer.lock').touch()
@@ -53,7 +53,7 @@ class TestApplication(TestCase):
         with open(temp_dir.name + '/composer.lock', 'w') as f:
             f.write('{"packages": [{"name": "drupal/core", "version": "8.8.7"}]}')
         app.determine_drupal_core_version(args)
-        self.assertEqual(app._Application__drupal_core_version, '8.8.7')
+        self.assertEqual(app.drupal_core_version, '8.8.7')
         temp_dir.cleanup()
 
     def test_get_argparser_configuration(self):
@@ -97,7 +97,7 @@ class TestApplication(TestCase):
         app.get_required_modules(args)
         
         # Verify that only drupal/* (excluding core) are added
-        modules = app._Application__modules
+        modules = app.modules
         self.assertIn("drupal/webform", modules)
         self.assertIn("drupal/token", modules)
         self.assertNotIn("drupal/core", modules)
@@ -107,7 +107,7 @@ class TestApplication(TestCase):
     def test_determine_module_versions(self):
         app = Application()
         # Pretend we already loaded modules
-        app._Application__modules = {
+        app.modules = {
             "drupal/token": Module("drupal/token"),
             "drupal/webform": Module("drupal/webform")
         }
@@ -126,7 +126,7 @@ class TestApplication(TestCase):
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
         app.determine_module_versions(args)
         
-        modules = app._Application__modules
+        modules = app.modules
         self.assertEqual(modules["drupal/token"].version, "1.5.0")
         self.assertEqual(modules["drupal/webform"].version, "6.1.2")
         temp_dir.cleanup()
@@ -187,10 +187,13 @@ def test_handle_info():
         
         output = mock_stdout.getvalue()
         assert "Drupal Scout v1.1.0" in output
-        assert "Version: 1.1.0 (verified from metadata)" in output
-        assert "Dependencies: jq binary is FOUND and FUNCTIONAL" in output
-        assert "composer.json: DETECTED" in output
-        assert "Drupal Core Version: 9.5.0" in output
+        assert "1.1.0 (verified from metadata)" in output
+        assert "Dependencies (jq)" in output
+        assert "FOUND and FUNCTIONAL" in output
+        assert "composer.json" in output
+        assert "DETECTED" in output
+        assert "Drupal Core Version" in output
+        assert "9.5.0" in output
 
     temp_dir.cleanup()
 
@@ -245,7 +248,8 @@ def test_handle_info_jq_missing():
             
             app.handle_info(args)
             output = mock_stdout.getvalue()
-            assert "Dependencies: jq binary is NOT FOUND OR NOT FUNCTIONAL" in output
+            assert "Dependencies (jq)" in output
+            assert "NOT FOUND OR NOT FUNCTIONAL" in output
 
 
 @pytest.mark.asyncio
@@ -255,11 +259,11 @@ async def test_run_directory_not_found():
     """
     app = Application()
     with patch('sys.argv', ['drupal-scout', '-d', '/non/existent/path/for/test']):
-        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
             with pytest.raises(SystemExit) as exc_info:
                 await app.run()
             assert exc_info.value.code == 1
-            output = mock_stdout.getvalue()
+            output = mock_stderr.getvalue()
             assert "does not exist" in output
 
 
@@ -271,11 +275,11 @@ async def test_run_no_composer_json():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1
-                output = mock_stdout.getvalue()
+                output = mock_stderr.getvalue()
                 assert "does not contain the composer.json file" in output
 
 
@@ -310,11 +314,11 @@ async def test_run_composer_v1_exits():
             json.dump({"require": {"drupal/core": "^9"}}, f)
 
         with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1
-                output = mock_stdout.getvalue()
+                output = mock_stderr.getvalue()
                 assert "Composer v1" in output
 
 
@@ -352,7 +356,7 @@ async def test_run_with_lock_file():
 
             MockWorkersManager.assert_called_once()
             # Verify determine_module_versions was reached (lock was used)
-            modules = app._Application__modules
+            modules = app.modules
             assert modules["drupal/token"].version == "1.5.0"
 
 
@@ -379,7 +383,7 @@ async def test_run_no_modules_found():
             json.dump(lock_data, f)
 
         with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('drupal_scout.application.stderr', new_callable=StringIO) as mock_stderr:
+            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
                 await app.run()
                 output = mock_stderr.getvalue()
                 assert "No modules were found" in output
@@ -418,8 +422,10 @@ def test_handle_info_with_lock_detected():
             mock_run.return_value = MagicMock()
             app.handle_info(args)
             output = mock_stdout.getvalue()
-            assert "Drupal Core Version: 10.2.0" in output
-            assert "composer.lock: DETECTED" in output
+            assert "Drupal Core Version" in output
+            assert "10.2.0" in output
+            assert "composer.lock" in output
+            assert "DETECTED" in output
 
 
 def test_handle_info_core_version_detection_failure():
@@ -442,7 +448,8 @@ def test_handle_info_core_version_detection_failure():
             app.handle_info(args)
             output = mock_stdout.getvalue()
             # Should fall back to [Unknown] when detection fails
-            assert "Drupal Core Version: [Unknown]" in output
+            assert "Drupal Core Version" in output
+            assert "[Unknown]" in output
 
 
 def test_determine_module_versions_with_empty_modules():
@@ -452,11 +459,11 @@ def test_determine_module_versions_with_empty_modules():
     """
     app = Application()
     # Ensure __modules is empty
-    app._Application__modules = {}
+    app.modules = {}
 
     with tempfile.TemporaryDirectory() as temp_dir:
         args = argparse.Namespace(directory=temp_dir)
-        with patch('drupal_scout.application.stderr', new_callable=StringIO) as mock_stderr:
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
             with pytest.raises(SystemExit) as exc_info:
                 app.determine_module_versions(args)
             assert exc_info.value.code == 0
@@ -653,7 +660,7 @@ async def test_run_targeted_scan_exits_when_core_cannot_be_detected():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch('sys.argv', ['drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform']):
-            with patch('drupal_scout.application.stderr', new_callable=StringIO) as mock_stderr:
+            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1

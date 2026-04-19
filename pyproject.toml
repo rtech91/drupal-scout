@@ -23,8 +23,8 @@ dependencies = [
     'argparse',
     'aiohttp',
     'packaging',
-    'prettytable',
-    'termcolor',
+    'fastmcp',
+    "rich>=15.0.0",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +41,9 @@ dev = [
 "Homepage" = "https://github.com/rtech91/drupal-scout"
 "Bug Tracker" = "https://github.com/rtech91/drupal-scout/issues"
 
+[project.scripts]
+drupal-scout-mcp = "drupal_scout.mcp_server:main"
+
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -56,3 +59,13 @@ source = ["drupal_scout"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "jq"
+ignore_missing_imports = true
+
