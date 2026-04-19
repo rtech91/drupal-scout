@@ -1,6 +1,6 @@
 [project]
 name = "drupal-scout"
-version = "2.1.1-rc1"
+version = "3.0.0-rc1"
 description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
 readme = "README.md"
 license = { file = "LICENSE.txt" }
@@ -68,4 +68,3 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = "jq"
 ignore_missing_imports = true
-
