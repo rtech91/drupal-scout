@@ -23,35 +23,13 @@ from typing import Optional
 from fastmcp import FastMCP
 
 from .application import Application
-from .exceptions import (
-    ComposerV1Exception,
-    DirectoryNotFoundException,
-    NoComposerJSONFileException,
-)
+from .output import SilentOutputHandler
 from .formatters.jsonformatter import JSONFormatter
 from .formatters.suggestformatter import SuggestFormatter
 from .module import Module
 from .workers_manager import WorkersManager
 
 mcp = FastMCP("drupal-scout")
-
-
-def _suppress_outputs():
-    """Redirect stdout and stderr to StringIO to ensure output purity.
-
-    Returns the original stdout/stderr so they can be restored later.
-    """
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
-    sys.stdout = io.StringIO()
-    sys.stderr = io.StringIO()
-    return original_stdout, original_stderr
-
-
-def _restore_outputs(original_stdout, original_stderr):
-    """Restore the original stdout and stderr streams."""
-    sys.stdout = original_stdout
-    sys.stderr = original_stderr
 
 
 # ---------------------------------------------------------------------------
@@ -77,54 +55,50 @@ async def get_diagnostic_info(directory: str = ".") -> dict:
         A JSON object with diagnostic fields: version, jq_status,
         composer_json, composer_lock, composer2, drupal_core_version.
     """
-    original_stdout, original_stderr = _suppress_outputs()
+    app = Application(output_handler=SilentOutputHandler())
+    result = {}
+
+    # Version
+    result["version"] = app.get_version()
+
+    # jq binary check
     try:
-        app = Application()
-        result = {}
+        subprocess.run(
+            ["jq", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        result["jq_status"] = "FOUND and FUNCTIONAL"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        result["jq_status"] = "NOT FOUND OR NOT FUNCTIONAL"
 
-        # Version
-        result["version"] = app.get_version()
+    # Composer file presence
+    result["composer_json"] = os.path.isfile(
+        os.path.join(directory, "composer.json")
+    )
+    result["composer_lock"] = os.path.isfile(
+        os.path.join(directory, "composer.lock")
+    )
 
-        # jq binary check
+    # Composer 2 detection
+    args_ns = Namespace(directory=directory)
+    result["composer2"] = app.is_composer2(args_ns)
+
+    # Drupal core version
+    result["drupal_core_version"] = None
+    if result["composer_json"]:
         try:
-            subprocess.run(
-                ["jq", "--version"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
-            result["jq_status"] = "FOUND and FUNCTIONAL"
-        except (subprocess.SubprocessError, FileNotFoundError):
-            result["jq_status"] = "NOT FOUND OR NOT FUNCTIONAL"
+            if result["composer_lock"]:
+                detect_args = Namespace(directory=directory, no_lock=False)
+            else:
+                detect_args = Namespace(directory=directory, no_lock=True)
+            app.determine_drupal_core_version(detect_args)
+            result["drupal_core_version"] = app.drupal_core_version
+        except Exception:
+            pass
 
-        # Composer file presence
-        result["composer_json"] = os.path.isfile(
-            os.path.join(directory, "composer.json")
-        )
-        result["composer_lock"] = os.path.isfile(
-            os.path.join(directory, "composer.lock")
-        )
-
-        # Composer 2 detection
-        args_ns = Namespace(directory=directory)
-        result["composer2"] = app.is_composer2(args_ns)
-
-        # Drupal core version
-        result["drupal_core_version"] = None
-        if result["composer_json"]:
-            try:
-                if result["composer_lock"]:
-                    detect_args = Namespace(directory=directory, no_lock=False)
-                else:
-                    detect_args = Namespace(directory=directory, no_lock=True)
-                app.determine_drupal_core_version(detect_args)
-                result["drupal_core_version"] = app.drupal_core_version
-            except Exception:
-                pass
-
-        return result
-    finally:
-        _restore_outputs(original_stdout, original_stderr)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -160,70 +134,67 @@ async def perform_full_project_scan(
         - lock_file_used: whether composer.lock was used
         - error: error message if the scan could not proceed
     """
-    original_stdout, original_stderr = _suppress_outputs()
+    app = Application(output_handler=SilentOutputHandler())
+
+    # Validate directory
+    if not os.path.isdir(directory):
+        return {"error": f"The directory {directory} does not exist."}
+
+    # Validate composer.json
+    if not os.path.isfile(os.path.join(directory, "composer.json")):
+        return {"error": "The directory does not contain a composer.json file."}
+
+    # Check Composer 2
+    args_ns = Namespace(directory=directory, no_lock=no_lock)
+    if not app.is_composer2(args_ns):
+        return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
+
+    # Determine Drupal core version
     try:
-        app = Application()
+        app.determine_drupal_core_version(args_ns)
+    except Exception as e:
+        return {"error": f"Failed to determine Drupal core version: {e}"}
 
-        # Validate directory
-        if not os.path.isdir(directory):
-            return {"error": f"The directory {directory} does not exist."}
+    core_version = app.drupal_core_version
 
-        # Validate composer.json
-        if not os.path.isfile(os.path.join(directory, "composer.json")):
-            return {"error": "The directory does not contain a composer.json file."}
+    # Get required modules
+    app.get_required_modules(args_ns)
+    modules = app.modules
 
-        # Check Composer 2
-        args_ns = Namespace(directory=directory, no_lock=no_lock)
-        if not app.is_composer2(args_ns):
-            return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
-
-        # Determine Drupal core version
-        try:
-            app.determine_drupal_core_version(args_ns)
-        except Exception as e:
-            return {"error": f"Failed to determine Drupal core version: {e}"}
-
-        core_version = app.drupal_core_version
-
-        # Get required modules
-        app.get_required_modules(args_ns)
-        modules = app.modules
-
-        if len(modules) == 0:
-            return {
-                "modules": [],
-                "drupal_core_version": core_version,
-                "lock_file_used": False,
-                "message": "No drupal/* modules were found in composer.json.",
-            }
-
-        # Determine module versions from lock file
-        lock_file_used = False
-        composer_lock_path = os.path.join(directory, "composer.lock")
-        if not no_lock and os.path.isfile(composer_lock_path):
-            app.determine_module_versions(args_ns)
-            lock_file_used = True
-
-        # Run workers
-        workers_manager = WorkersManager(
-            modules=list(modules.values()),
-            current_core=core_version,
-            use_lock_version=lock_file_used,
-            concurrency_limit=limit,
-        )
-        await workers_manager.run()
-
-        # Format output as JSON
-        formatter = JSONFormatter()
-        modules_json = json.loads(formatter.format(list(modules.values())))
-
+    if len(modules) == 0:
         return {
-            "modules": modules_json,
+            "modules": [],
             "drupal_core_version": core_version,
-            "lock_file_used": lock_file_used,
+            "lock_file_used": False,
+            "message": "No drupal/* modules were found in composer.json.",
         }
-    finally:
-        _restore_outputs(original_stdout, original_stderr)
+
+    # Determine module versions from lock file
+    lock_file_used = False
+    composer_lock_path = os.path.join(directory, "composer.lock")
+    if not no_lock and os.path.isfile(composer_lock_path):
+        app.determine_module_versions(args_ns)
+        lock_file_used = True
+
+    # Run workers
+    workers_manager = WorkersManager(
+        modules=list(modules.values()),
+        current_core=core_version,
+        use_lock_version=lock_file_used,
+        concurrency_limit=limit,
+        output=app.output,
+    )
+    await workers_manager.run()
+
+    # Format output as JSON
+    formatter = JSONFormatter()
+    modules_json = json.loads(formatter.format(list(modules.values())))
+
+    return {
+        "modules": modules_json,
+        "drupal_core_version": core_version,
+        "lock_file_used": lock_file_used,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -267,62 +238,59 @@ async def scan_specific_modules(
         - lock_file_used: whether composer.lock was used
         - error: error message if the scan could not proceed
     """
-    original_stdout, original_stderr = _suppress_outputs()
-    try:
-        app = Application()
+    app = Application(output_handler=SilentOutputHandler())
 
-        # Resolve core version
-        if core:
-            resolved_core = core.replace("^", "").replace("~", "")
-        else:
-            # Auto-detect from local project files
-            detected_core = _auto_detect_core(app, directory)
-            if detected_core is None:
-                return {
-                    "error": (
-                        "Unable to determine Drupal core version. "
-                        "Provide the 'core' argument or ensure composer.lock/"
-                        "composer.json exists in the directory."
-                    )
-                }
-            resolved_core = detected_core
+    # Resolve core version
+    if core:
+        resolved_core = core.replace("^", "").replace("~", "")
+    else:
+        # Auto-detect from local project files
+        detected_core = _auto_detect_core(app, directory)
+        if detected_core is None:
+            return {
+                "error": (
+                    "Unable to determine Drupal core version. "
+                    "Provide the 'core' argument or ensure composer.lock/"
+                    "composer.json exists in the directory."
+                )
+            }
+        resolved_core = detected_core
 
-        # Build module objects
-        module_objects = {}
-        for name in modules:
-            module_objects[name] = Module(name)
+    # Build module objects
+    module_objects = {}
+    for name in modules:
+        module_objects[name] = Module(name)
 
-        # Auto-detect lock file
-        lock_file_used = False
-        composer_lock_path = os.path.join(directory, "composer.lock")
-        if os.path.isfile(composer_lock_path):
-            # Use Application's method to populate versions from lock
-            app.modules = module_objects
-            args_ns = Namespace(directory=directory, no_lock=False)
-            app.determine_module_versions(args_ns)
-            module_objects = app.modules
-            lock_file_used = True
+    # Auto-detect lock file
+    lock_file_used = False
+    composer_lock_path = os.path.join(directory, "composer.lock")
+    if os.path.isfile(composer_lock_path):
+        # Use Application's method to populate versions from lock
+        app.modules = module_objects
+        args_ns = Namespace(directory=directory, no_lock=False)
+        app.determine_module_versions(args_ns)
+        module_objects = app.modules
+        lock_file_used = True
 
-        # Run workers
-        workers_manager = WorkersManager(
-            modules=list(module_objects.values()),
-            current_core=resolved_core,
-            use_lock_version=lock_file_used,
-            concurrency_limit=limit,
-        )
-        await workers_manager.run()
+    # Run workers
+    workers_manager = WorkersManager(
+        modules=list(module_objects.values()),
+        current_core=resolved_core,
+        use_lock_version=lock_file_used,
+        concurrency_limit=limit,
+        output=app.output,
+    )
+    await workers_manager.run()
 
-        # Format output
-        formatter = JSONFormatter()
-        modules_json = json.loads(formatter.format(list(module_objects.values())))
+    # Format output
+    formatter = JSONFormatter()
+    modules_json = json.loads(formatter.format(list(module_objects.values())))
 
-        return {
-            "modules": modules_json,
-            "drupal_core_version": resolved_core,
-            "lock_file_used": lock_file_used,
-        }
-    finally:
-        _restore_outputs(original_stdout, original_stderr)
+    return {
+        "modules": modules_json,
+        "drupal_core_version": resolved_core,
+        "lock_file_used": lock_file_used,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -356,81 +324,78 @@ async def generate_composer_upgrade_json(
         - drupal_core_version: the core version used for the scan
         - error: error message if the scan could not proceed
     """
-    original_stdout, original_stderr = _suppress_outputs()
-    try:
-        app = Application()
+    app = Application(output_handler=SilentOutputHandler())
 
-        # Validate directory
-        if not os.path.isdir(directory):
-            return {"error": f"The directory {directory} does not exist."}
+    # Validate directory
+    if not os.path.isdir(directory):
+        return {"error": f"The directory {directory} does not exist."}
 
-        # Validate composer.json
-        if not os.path.isfile(os.path.join(directory, "composer.json")):
-            return {"error": "The directory does not contain a composer.json file."}
+    # Validate composer.json
+    if not os.path.isfile(os.path.join(directory, "composer.json")):
+        return {"error": "The directory does not contain a composer.json file."}
 
-        # Check Composer 2
-        args_ns = Namespace(directory=directory, no_lock=False)
-        if not app.is_composer2(args_ns):
-            return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
+    # Check Composer 2
+    args_ns = Namespace(directory=directory, no_lock=False)
+    if not app.is_composer2(args_ns):
+        return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
 
-        # Determine core version
-        if core:
-            app.drupal_core_version = core.replace("^", "").replace("~", "")
-        else:
-            try:
-                # Prefer lock file for core version detection
-                if os.path.isfile(os.path.join(directory, "composer.lock")):
-                    detect_args = Namespace(directory=directory, no_lock=False)
-                else:
-                    detect_args = Namespace(directory=directory, no_lock=True)
-                app.determine_drupal_core_version(detect_args)
-            except Exception as e:
-                return {"error": f"Failed to determine Drupal core version: {e}"}
+    # Determine core version
+    if core:
+        app.drupal_core_version = core.replace("^", "").replace("~", "")
+    else:
+        try:
+            # Prefer lock file for core version detection
+            if os.path.isfile(os.path.join(directory, "composer.lock")):
+                detect_args = Namespace(directory=directory, no_lock=False)
+            else:
+                detect_args = Namespace(directory=directory, no_lock=True)
+            app.determine_drupal_core_version(detect_args)
+        except Exception as e:
+            return {"error": f"Failed to determine Drupal core version: {e}"}
 
-        core_version = app.drupal_core_version
+    core_version = app.drupal_core_version
 
-        # Get required modules
-        app.get_required_modules(args_ns)
-        modules_dict = app.modules
+    # Get required modules
+    app.get_required_modules(args_ns)
+    modules_dict = app.modules
 
-        if len(modules_dict) == 0:
-            return {
-                "suggested_composer_json": None,
-                "drupal_core_version": core_version,
-                "message": "No drupal/* modules were found in composer.json.",
-            }
-
-        # Determine module versions from lock file
-        lock_file_used = False
-        composer_lock_path = os.path.join(directory, "composer.lock")
-        if os.path.isfile(composer_lock_path):
-            app.determine_module_versions(
-                Namespace(directory=directory, no_lock=False)
-            )
-            lock_file_used = True
-
-        # Run workers
-        workers_manager = WorkersManager(
-            modules=list(modules_dict.values()),
-            current_core=core_version,
-            use_lock_version=lock_file_used,
-            concurrency_limit=10,
-        )
-        await workers_manager.run()
-
-        # Use SuggestFormatter to build the suggested composer.json
-        # but WITHOUT writing to disk (save_dump=False)
-        suggest_args = Namespace(directory=directory, save_dump=False)
-        formatter = SuggestFormatter(suggest_args)
-        suggested_json_str = formatter.format(list(modules_dict.values()))
-        suggested_composer = json.loads(suggested_json_str)
-
+    if len(modules_dict) == 0:
         return {
-            "suggested_composer_json": suggested_composer,
+            "suggested_composer_json": None,
             "drupal_core_version": core_version,
+            "message": "No drupal/* modules were found in composer.json.",
         }
-    finally:
-        _restore_outputs(original_stdout, original_stderr)
+
+    # Determine module versions from lock file
+    lock_file_used = False
+    composer_lock_path = os.path.join(directory, "composer.lock")
+    if os.path.isfile(composer_lock_path):
+        app.determine_module_versions(
+            Namespace(directory=directory, no_lock=False)
+        )
+        lock_file_used = True
+
+    # Run workers
+    workers_manager = WorkersManager(
+        modules=list(modules_dict.values()),
+        current_core=core_version,
+        use_lock_version=lock_file_used,
+        concurrency_limit=10,
+        output=app.output,
+    )
+    await workers_manager.run()
+
+    # Use SuggestFormatter to build the suggested composer.json
+    # but WITHOUT writing to disk (save_dump=False)
+    suggest_args = Namespace(directory=directory, save_dump=False)
+    formatter = SuggestFormatter(suggest_args)
+    suggested_json_str = formatter.format(list(modules_dict.values()))
+    suggested_composer = json.loads(suggested_json_str)
+
+    return {
+        "suggested_composer_json": suggested_composer,
+        "drupal_core_version": core_version,
+    }
 
 
 # ---------------------------------------------------------------------------

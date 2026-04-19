@@ -1,4 +1,4 @@
-from sys import exit, stderr
+from sys import exit
 import asyncio
 import json
 import os
@@ -8,6 +8,7 @@ from .formatters.formatterfactory import FormatterFactory
 from .exceptions import *
 from .module import Module
 from .workers_manager import WorkersManager
+from .output import ConsoleOutputHandler, logger
 
 
 class Application:
@@ -15,7 +16,8 @@ class Application:
     The main application class.
     """
 
-    def __init__(self):
+    def __init__(self, output_handler=None):
+        self.output = output_handler or ConsoleOutputHandler()
         self.__modules = {}
         self.__drupal_core_version = "8.8"  # default and minimal supported Drupal core version for upgrade
 
@@ -60,7 +62,7 @@ class Application:
             await self._run_environment_scan(args)
 
         except (ComposerV1Exception, DirectoryNotFoundException, NoComposerJSONFileException) as e:
-            print(e.message)
+            logger.warning(e.message)
             exit(1)
 
     async def _run_targeted_scan(self, args) -> None:
@@ -75,33 +77,32 @@ class Application:
             self.determine_module_versions(args)
             use_lock_version = True
         elif not args.no_lock:
-            print(
-                "composer.lock was not found; running targeted scan without installed-version protection.",
-                file=stderr
+            logger.warning(
+                "composer.lock was not found; running targeted scan without installed-version protection."
             )
         else:
-            print(
-                "The composer.lock file was not used to determine installed versions of targeted modules.",
-                file=stderr
+            logger.warning(
+                "The composer.lock file was not used to determine installed versions of targeted modules."
             )
 
         workers_manager = WorkersManager(
             modules=list(self.__modules.values()),
             current_core=self.__drupal_core_version,
             use_lock_version=use_lock_version,
-            concurrency_limit=args.limit
+            concurrency_limit=args.limit,
+            output=self.output
         )
         await workers_manager.run()
 
         formatter = FormatterFactory.get_formatter(args)
         if formatter:
-            print(formatter.format(list(self.__modules.values())))
+            self.output.print(formatter.format(list(self.__modules.values())))
 
     def _resolve_targeted_core_version(self, args) -> str:
         """Resolve Drupal core version for targeted scans with CLI override + environment fallback."""
         if args.core:
             resolved_core = args.core.replace("^", "").replace("~", "")
-            print(f"Using Drupal core version from --core: {resolved_core}", file=stderr)
+            logger.warning(f"Using Drupal core version from --core: {resolved_core}")
             return resolved_core
 
         try:
@@ -113,10 +114,9 @@ class Application:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             pass
 
-        print(
+        logger.error(
             "Unable to determine Drupal core version. Provide --core or run inside a project directory with "
-            "composer.lock/composer.json.",
-            file=stderr,
+            "composer.lock/composer.json."
         )
         exit(1)
 
@@ -144,27 +144,27 @@ class Application:
             if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
                 self.determine_module_versions(args)
             elif args.no_lock:
-                print("The composer.lock file was not used to determine the installed versions of the modules.",
-                      file=stderr)
-                print(
-                    "The only Drupal core version will be use to determine the transitive versions of the modules.",
-                    file=stderr)
+                logger.warning("The composer.lock file was not used to determine the installed versions of the modules.")
+                logger.warning(
+                    "The only Drupal core version will be use to determine the transitive versions of the modules."
+                )
 
             # create the workers manager
             workers_manager = WorkersManager(
                 modules=list(self.__modules.values()),
                 current_core=self.__drupal_core_version,
                 use_lock_version=not args.no_lock,
-                concurrency_limit=args.limit
+                concurrency_limit=args.limit,
+                output=self.output
             )
             await workers_manager.run()
 
             # output the results
             formatter = FormatterFactory.get_formatter(args)
             if formatter:
-                print(formatter.format(list(self.__modules.values())))
+                self.output.print(formatter.format(list(self.__modules.values())))
         else:
-            print("No modules were found in the composer.json file.", file=stderr)
+            logger.warning("No modules were found in the composer.json file.")
 
     def get_argparser_configuration(self, parser) -> ArgumentParser:
         """
@@ -289,42 +289,37 @@ class Application:
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
-        print(f"Drupal Scout v{version}")
-        print("-" * 19)
-        print("Status:")
-        print(f"  - Version: {version} (verified from metadata)")
-        print(f"  - Dependencies: jq binary is {jq_status}")
-        print("  - Environment: ")
+        composer_json_str = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.json")) else "NOT DETECTED"
+        composer_lock_str = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.lock")) else "NOT DETECTED"
         
-        composer_json = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.json")) else "NOT DETECTED"
-        composer_lock = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.lock")) else "NOT DETECTED"
-        
-        print(f"      * composer.json: {composer_json}")
-        print(f"      * composer.lock: {composer_lock}")
-        
-        composer2_status = "DETECTED" if self.is_composer2(args) else "NOT DETECTED"
-        print(f"      * Composer 2: {composer2_status}")
+        composer2_status_str = "DETECTED" if self.is_composer2(args) else "NOT DETECTED"
         
         core_version = "[Unknown]"
-        if composer_json == "DETECTED":
+        if composer_json_str == "DETECTED":
             try:
-                if composer_lock == "DETECTED":
+                if composer_lock_str == "DETECTED":
                     args_mock = type('Args', (object,), {"no_lock": False, "directory": args.directory})()
                 else:
                     args_mock = type('Args', (object,), {"no_lock": True, "directory": args.directory})()
                 
-                import sys, io
-                original_stdout = sys.stdout
-                sys.stdout = io.StringIO()
-                try:
+                # Use contextlib for cleaner stream suppression
+                import contextlib, io
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                     self.determine_drupal_core_version(args_mock)
-                    core_version = self.__drupal_core_version
-                finally:
-                    sys.stdout = original_stdout
+                    # Use public property to avoid __ direct access if possible
+                    core_version = self.drupal_core_version
             except Exception:
                 pass
-                
-        print(f"      * Drupal Core Version: {core_version}")
+
+        status_data = {
+            "Version": f"{version} (verified from metadata)",
+            "Dependencies (jq)": jq_status,
+            "composer.json": composer_json_str,
+            "composer.lock": composer_lock_str,
+            "Composer 2": composer2_status_str,
+            "Drupal Core Version": core_version
+        }
+        self.output.render_info_table(f"Drupal Scout v{version} Status", status_data)
 
     def is_composer2(self, args):
         """
@@ -366,7 +361,7 @@ class Application:
                     # clear special characters from the version
                     self.__drupal_core_version = composer_json["require"]["drupal/core-recommended"] \
                         .replace("^", "").replace("~", "")
-        print("The Drupal core version is: " + self.__drupal_core_version, file=stderr)
+        logger.warning("The Drupal core version is: " + self.__drupal_core_version)
 
     def get_required_modules(self, args):
         """
@@ -392,7 +387,7 @@ class Application:
         :rtype:           list
         """
         if len(self.__modules) == 0:
-            print("No modules to check.", file=stderr)
+            logger.warning("No modules to check.")
             exit(0)
 
         with open(os.path.join(args.directory, "composer.lock"), "r") as f:

@@ -23,9 +23,8 @@ dependencies = [
     'argparse',
     'aiohttp',
     'packaging',
-    'prettytable',
-    'termcolor',
     'fastmcp',
+    "rich>=15.0.0",
 ]
 
 [project.optional-dependencies]
@@ -60,3 +59,13 @@ source = ["drupal_scout"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "jq"
+ignore_missing_imports = true
+
