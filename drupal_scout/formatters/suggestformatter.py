@@ -17,7 +17,7 @@ class SuggestFormatter(Formatter):
         self.directory = args.directory
         self.save_dump = args.save_dump
 
-    def format(self, modules: [Module]) -> str:
+    def format(self, modules: list[Module]) -> str:
         """
         Take the real composer.json contents, and module requirement versions with suitable entry versions.
         :param modules:   the list of modules
@@ -25,7 +25,7 @@ class SuggestFormatter(Formatter):
         :return:          the formatted output
         :rtype:           str
         """
-        output = []
+        output: list[str] = []
         with open(os.path.join(self.directory, "composer.json"), "r") as f:
             composer_json = json.load(f)
             for module in modules:
@@ -49,7 +49,7 @@ class SuggestFormatter(Formatter):
                 json.dump(composer_json, f, indent=4)
         return json.dumps(composer_json, indent=4)
 
-    def find_lowest_version(self, suitable_entries: [dict]) -> str:
+    def find_lowest_version(self, suitable_entries: list[dict]) -> str | None:
         """
         Find the lowest version from the list of suitable entries.
         :param suitable_entries:   the list of suitable entries

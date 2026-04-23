@@ -1,42 +1,48 @@
-import threading
-
+import asyncio
+from os import cpu_count
+from typing import TYPE_CHECKING
 from .worker import Worker
-from multiprocessing import cpu_count
 
+if TYPE_CHECKING:
+    from .output import OutputHandler
 
 class WorkersManager:
     """
     The main workers manager class.
     """
 
-    def __init__(self, modules: list, number_of_threads: int, current_core: str = None, use_lock_version: bool = False):
+    def __init__(self, modules: list, concurrency_limit: int, output: 'OutputHandler', current_core: str | None = None, use_lock_version: bool = False):
         """
         Initialize the singleton workers manager.
         """
         self.modules = modules
-        self.number_of_threads = number_of_threads
+        self.output = output
+        self.concurrency_limit = concurrency_limit
         self.use_lock_version = use_lock_version
         self.current_core = current_core
-        self.workers = []
-        # determine the number of threads in current CPU core and set it as the number of threads
-        # to be used by the workers
-        self.number_of_threads = number_of_threads if number_of_threads >= 1 else cpu_count()
+        self.workers: list[Worker] = []
+        # determine the concurrency limit; fall back to cpu_count if invalid
+        self.concurrency_limit = concurrency_limit if concurrency_limit >= 1 else (cpu_count() or 4)
 
-    def run(self):
+    async def run(self):
         """
-        Run the workers.
+        Run the workers concurrently using asyncio TaskGroup and show progress via Rich.
         """
-        semaphore = threading.Semaphore(self.number_of_threads)
-        threads = []
-        for module in self.modules:
-            worker = Worker(
-                module=module,
-                use_lock_version=self.use_lock_version,
-                current_core=self.current_core
-            )
-            thread = threading.Thread(target=worker.run, args=(semaphore,))
-            threads.append(thread)
-            thread.start()
-
-        for thread in threads:
-            thread.join()
+        semaphore = asyncio.Semaphore(self.concurrency_limit)
+        
+        with self.output.progress_bar() as progress:
+            main_task = progress.add_task("[cyan]Scanning modules...", total=len(self.modules))
+            
+            async with asyncio.TaskGroup() as tg:
+                for module in self.modules:
+                    worker = Worker(
+                        module=module,
+                        use_lock_version=self.use_lock_version,
+                        current_core=self.current_core
+                    )
+                    
+                    async def run_worker_with_progress(w, s, p, t):
+                        await w.run(s)
+                        p.advance(t)
+                        
+                    tg.create_task(run_worker_with_progress(worker, semaphore, progress, main_task))

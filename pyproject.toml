@@ -1,6 +1,6 @@
 [project]
 name = "drupal-scout"
-version = "1.2.0"
+version = "3.0.0"
 description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
 readme = "README.md"
 license = { file = "LICENSE.txt" }
@@ -16,23 +16,33 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Andrew [R-Tech] Tsyhaniuk", email = "in0mad91@gmail.com" }]
 dependencies = [
     'jq',
     'argparse',
-    'requests',
+    'aiohttp',
     'packaging',
-    'prettytable',
-    'termcolor',
+    'fastmcp',
+    "rich>=15.0.0",
 ]
 
 [project.optional-dependencies]
-dev = ['nose', 'coverage', 'pipdeptree', 'pip-autoremove']
+dev = [
+    'nose',
+    'coverage',
+    'pipdeptree',
+    'pip-autoremove',
+    'pytest-asyncio',
+    'aioresponses',
+]
 
 [project.urls]
 "Homepage" = "https://github.com/rtech91/drupal-scout"
 "Bug Tracker" = "https://github.com/rtech91/drupal-scout/issues"
+
+[project.scripts]
+drupal-scout-mcp = "drupal_scout.mcp_server:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -43,3 +53,18 @@ script-files = ["bin/drupal-scout"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]
+
+[tool.coverage.run]
+source = ["drupal_scout"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "jq"
+ignore_missing_imports = true

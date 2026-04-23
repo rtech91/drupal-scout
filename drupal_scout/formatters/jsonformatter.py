@@ -9,7 +9,7 @@ class JSONFormatter(Formatter):
     Formats the output as JSON.
     """
 
-    def format(self, modules: [Module]) -> str:
+    def format(self, modules: list[Module]) -> str:
         """
         Format the output as JSON.
         :param modules:     the list of modules
@@ -17,7 +17,7 @@ class JSONFormatter(Formatter):
         :return:            the formatted output
         :rtype:             str
         """
-        output = []
+        output: list[dict] = []
         for module in modules:
             output.append({
                 'name': module.name,

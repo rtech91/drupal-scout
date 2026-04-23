@@ -1,43 +1,50 @@
-import prettytable
-from termcolor import colored
-
+from rich.table import Table
+from rich.text import Text
+from rich import box
 from .formatter import Formatter
 from drupal_scout.module import Module
-from textwrap import fill
-
 
 class TableFormatter(Formatter):
     """
-    Formats the output as a table.
+    Formats the output as a beautiful Rich table.
     """
 
-    def format(self, modules: [Module]) -> str:
+    def format(self, modules: list[Module]) -> Table:
         """
-        Format the output as a table.
+        Format the output as a rich Table.
         :param modules:     the list of modules
-        :type modules:      list
-        :return:            the formatted output
-        :rtype:             str
+        :return:            the rich Table object
         """
-        header = ['Name', 'Version', 'Suitable entries']
-        table = prettytable.PrettyTable(field_names=header, align='l', hrules=prettytable.ALL)
-        table.preserve_internal_border = True
-        items = []
+        table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED, padding=(0, 1))
+        # Adding a border between rows for clarity
+        table.show_edge = True
+        table.show_lines = True
+        
+        table.add_column("Name", style="cyan", no_wrap=True)
+        table.add_column("Version", style="green")
+        table.add_column("Suitable entries", style="white")
+
         for module in modules:
-            suitable_entries = []
-            if len(module.suitable_entries) > 1:
-                for entry in module.suitable_entries:
-                    suitable_entries.append(f"v{entry['version']} [{entry['requirement']}]")
+            entries_text = Text()
+            
+            if len(module.suitable_entries) > 0:
+                for i, entry in enumerate(module.suitable_entries):
+                    if i > 0:
+                        entries_text.append("\n")
+                    # Using Rich style instead of ANSI codes
+                    entries_text.append(f"v{entry['version']} ", style="white")
+                    entries_text.append(f"[{entry['requirement']}]", style="grey70")
             elif module.failed:
-                suitable_entries.append(colored(f"Failed to fetch module data", 'red'))
+                entries_text.append("Failed to fetch module data", style="red")
             elif module.active is not True:
-                suitable_entries.append(colored(f"Module possibly not active", 'red'))
+                entries_text.append("Module possibly not active", style="yellow")
             else:
-                suitable_entries.append(colored(f"No suitable entries found", 'light_grey'))
-            table.add_row([
+                entries_text.append("No suitable entries found", style="italic grey50")
+            
+            table.add_row(
                 module.name,
-                module.version,
-                fill('\n'.join(suitable_entries), 80, break_long_words=False, replace_whitespace=False)
-            ])
-            items.clear()
-        return table.get_string()
+                module.version or "[dim]N/A[/dim]",
+                entries_text
+            )
+            
+        return table
