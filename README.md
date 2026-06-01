@@ -1,65 +1,109 @@
 # Drupal Scout
 
-Search for Drupal module entries with transitive core version requirements to help to upgrade the Drupal Core
+Search for Drupal module entries with transitive core version requirements to help to upgrade the Drupal Core.
 
 ## Installation
 
+### Using uv (Recommended)
+
 ```bash
-  pip install drupal-scout
+uv tool install drupal-scout
+```
+
+Or run directly without installing:
+
+```bash
+uvx drupal-scout --help
+```
+
+### Using pip
+
+```bash
+pip install drupal-scout
+```
+
+## Quick Start
+
+Get a compatibility report for your current Drupal project:
+
+```bash
+drupal-scout
+```
+
+Scan a specific module for Drupal 11 compatibility:
+
+```bash
+drupal-scout --core 11.0.0 --modules drupal/webform
 ```
 
 ## Features
 
-- Use asyncio concurrency to speed up the process of searching for Drupal module entries with transitive core version requirements.
-- Quick self-diagnostic check of the environment and dependencies using the `info` command.
-- Choose between three output formats: table, json, and suggest.  
-    - `table` format will output the data in the table format.  
-    Example:
-    ![Table format example](https://raw.githubusercontent.com/rtech91/drupal-scout/main/screenshots/format_table_example.png)
-    - `json` format will output the raw data in the json format.  
-    - `suggest` format will output the suggested composer.json file with the updated module version requirements.  
-    It will also dump the suggested composer.json file to the specified path if the `--save-dump` argument is used.
+- **Asyncio Concurrency**: High-performance parallel module scanning using `asyncio` to speed up dependency analysis.
+- **Rich TUI Integration**: Beautiful terminal output with structured tables and real-time progress bars powered by the `rich` library.
+- **MCP Server Support**: Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server for integration with AI IDEs (like Claude Desktop or Cursor).
+- **Environment Diagnostics**: Quick self-diagnostic check of the environment and dependencies using the `info` command.
+- **Multiple Output Formats**:
+  - `table`: High-fidelity color-coded table for human readability.
+  - `json`: Machine-readable raw data for automation scripts.
+  - `suggest`: Generates a suggested `composer.json` with updated version requirements.
 
 ## Limitations
 
-- The application will only work with Composer-based (Composer v2) Drupal 8+ projects. 
+- **Python 3.11+**: The application requires Python 3.11 or higher.
+- **Composer v2**: The application works with **Composer-based (Composer v2)** Drupal 8+ projects.
 
 ## Usage/Examples
 
-`drupal-scout [-h] [-v] [-d DIRECTORY] [-n] [-l LIMIT] [-f {table,json,suggest}] [-s] [-c CORE] [-m MODULES [MODULES ...]] {info} ...`
+```bash
+drupal-scout [-h] [-v] [-d DIRECTORY] [-n] [-l LIMIT] [-f {table,json,suggest}] [-s] [-c CORE] [-m MODULES [MODULES ...]] {info} ...
+```
 
 ### Arguments
-&dash; `-h, --help` show this help message and exit  
-&ndash; `-v, --version` show program's version number and exit  
-&ndash; `-d DIRECTORY, --directory DIRECTORY`  Directory of the Drupal installation  
-&ndash; `-n, --no-lock` Do not use the composer.lock file to determine the installed versions of the modules  
-&ndash; `-l LIMIT, --limit LIMIT` The concurrency limit for async requests and data parsing. By default, the application uses all available CPU cores.  
-&ndash; `-f {table,json,suggest}, --format {table,json,suggest}` The output format. By default, the application will use the table format.  
-&ndash; `-s, --save-dump` Use in pair with `--format suggest` to dump the suggested composer.json file to the specified path. 
-&ndash; `-c CORE, --core CORE` Optional core version override for targeted scans. If omitted with `--modules`, core is auto-detected from composer metadata in `--directory`.  
-&ndash; `-m MODULES [MODULES ...], --modules MODULES [MODULES ...]` Scan only specific modules. When used, full environment module discovery is skipped. If `composer.lock` exists and `--no-lock` is not set, installed versions are still used for downgrade protection.  
+
+- `-h, --help`: Show help message and exit.
+- `-v, --version`: Show program's version number and exit.
+- `-d DIRECTORY, --directory DIRECTORY`: Directory of the Drupal installation (default: `.`).
+- `-n, --no-lock`: Do not use the `composer.lock` file to determine installed versions.
+- `-l LIMIT, --limit LIMIT`: Concurrency limit for async requests. Default is `10`.
+- `-f {table,json,suggest}, --format {table,json,suggest}`: Output format (default: `table`).
+- `-s, --save-dump`: Use with `--format suggest` to save the suggested `composer.json` to disk.
+- `-c CORE, --core CORE`: Optional Drupal core version override (e.g., `10.0.0`).
+- `-m MODULES [MODULES ...], --modules MODULES [MODULES ...]`: Scan only specific modules, skipping full project discovery.
 
 ### Subcommands
-&ndash; `info` - show diagnostic information about the tool and the current Drupal environment.
+
+- `info`: Show diagnostic information about the tool, `jq` availability, and the current Drupal environment.
+
+### MCP Server Usage
+
+To use Drupal Scout as an MCP server in your AI assistant:
+
+```bash
+drupal-scout-mcp
+```
+
+Or with `uvx`:
+
+```bash
+uvx --from drupal-scout drupal-scout-mcp
+```
 
 ### Targeted Scan Examples
 
-Scan one specific module with explicit core version:
+Scan one specific module with an explicit core version:
 
 ```bash
 drupal-scout --core 10.0.0 --modules drupal/webform
 ```
 
-Scan multiple specific modules and output JSON:
+Scan multiple modules and output JSON:
 
 ```bash
 drupal-scout --core 10.0.0 --modules drupal/webform drupal/ctools --format json
 ```
 
-Scan targeted modules with auto-detected core from local `composer.lock`/`composer.json` in directory:
+Scan modules with auto-detected core from a local directory:
 
 ```bash
 drupal-scout --directory /path/to/drupal --modules drupal/webform
 ```
-
-If core cannot be auto-detected, provide `--core` explicitly.
