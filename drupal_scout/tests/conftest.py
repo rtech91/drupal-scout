@@ -2,13 +2,19 @@ import pytest
 from unittest.mock import Mock
 from aiohttp.client_reqrep import ClientResponse
 
-# Save original __init__
-original_init = ClientResponse.__init__
 
-def patched_init(self, *args, **kwargs):
-    # If stream_writer is not provided, mock it to prevent TypeError in aiohttp >= 3.14.0
-    if 'stream_writer' not in kwargs:
-        kwargs['stream_writer'] = Mock()
-    original_init(self, *args, **kwargs)
+@pytest.fixture(autouse=True, scope="session")
+def _patch_aiohttp_clientresponse_init_stream_writer():
+    """Ensure tests remain compatible with aiohttp >= 3.14 when stream_writer is required."""
 
-ClientResponse.__init__ = patched_init  # type: ignore[method-assign]
+    original_init = ClientResponse.__init__
+
+    def patched_init(self, *args, **kwargs):
+        kwargs.setdefault("stream_writer", Mock())
+        return original_init(self, *args, **kwargs)
+
+    ClientResponse.__init__ = patched_init  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        ClientResponse.__init__ = original_init  # type: ignore[method-assign]
