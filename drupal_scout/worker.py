@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import re
 
 import aiohttp
 import jq
 from packaging import version
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.version import InvalidVersion
 from .exceptions import ModuleNotFoundException
 from .module import Module
 
@@ -123,12 +126,73 @@ class Worker:
             '.packages."' + self.module.name + '" | .[] | select(.require != null) | {"version", '
                                                '"requirement":.require."drupal/core"}').input(response_contents).all()
         for entry in entries:
-            if "|" in entry['requirement']:
-                entry['requirement'] = entry['requirement'].replace("^", "").replace(" ", "")
-                entry["requirement_parts"] = [p for p in entry['requirement'].split("|") if p]
-                entry['requirement'] = " || ".join(entry['requirement_parts'])
+            req_str = entry.get('requirement', '')
+            if req_str and "|" in req_str:
+                req_clean = req_str.replace("^", "").replace(" ", "")
+                parts = [p.strip() for p in re.split(r'\|+', req_clean) if p.strip()]
+                entry["requirement_parts"] = parts
+                entry['requirement'] = " || ".join(parts)
                 transitive_entries.append(entry)
         return transitive_entries
+
+    def _is_clause_satisfied(self, clause: str) -> bool:
+        """
+        Check if a single requirement clause is satisfied by self.current_core.
+        """
+        try:
+            core_ver = version.parse(self.current_core)
+        except InvalidVersion:
+            try:
+                core_ver = version.parse(f"{self.current_core}.0.0")
+            except InvalidVersion:
+                return False
+
+        raw_clause = clause.strip()
+        if not raw_clause:
+            return False
+
+        # Fast path for simple numbers or caret major versions e.g. '8', '^8', '9', '10'
+        if re.match(r'^[\^~]?\d+$', raw_clause):
+            try:
+                major = int(re.sub(r'[^\d]', '', raw_clause))
+                return core_ver.major == major
+            except ValueError:
+                pass
+
+        # Normalize specifiers for SpecifierSet
+        spec_str = raw_clause
+        def _expand_caret(m: re.Match) -> str:
+            ver_str = m.group(1)
+            major = int(ver_str.split('.')[0])
+            return f">={ver_str}, <{major + 1}.0.0"
+        spec_str = re.sub(r'\^(\d+(?:\.\d+)*)', _expand_caret, spec_str)
+        spec_str = re.sub(r'(\d+(?:\.\d+)*)\s*([<>=!~])', r'\1, \2', spec_str)
+        parts = [p.strip() for p in spec_str.split(',') if p.strip()]
+        norm_parts = []
+        for p in parts:
+            if re.match(r'^\d+\.x$', p):
+                norm_parts.append(f"=={p.split('.')[0]}.*")
+            elif re.match(r'^\d+$', p):
+                norm_parts.append(f"=={p}.*")
+            elif re.match(r'^\d+(\.\d+)+$', p):
+                norm_parts.append(f">={p}")
+            else:
+                norm_parts.append(p)
+        norm_spec_str = ", ".join(norm_parts)
+
+        try:
+            spec_set = SpecifierSet(norm_spec_str)
+            return core_ver in spec_set
+        except (InvalidSpecifier, InvalidVersion) as exc:
+            logger.warning("Failed to evaluate requirement clause %r as SpecifierSet: %s", clause, exc)
+            matches = re.findall(r'\b\d+\b', raw_clause)
+            if matches:
+                try:
+                    majors = [int(m) for m in matches]
+                    return core_ver.major in majors
+                except ValueError:
+                    pass
+            return False
 
     def find_suitable_entries(self, transitive_entries: list) -> list:
         """
@@ -139,20 +203,24 @@ class Worker:
         :rtype:     list
         """
         suitable_entries = []
-        current_major_version = version.parse(self.current_core).major
         for entry in transitive_entries:
-            # Parse all requirement parts to extract major versions
-            requirement_major_versions = [version.parse(req_part).major for req_part in entry['requirement_parts']]
-            
-            # Check if the current major version is in the list of supported major versions
-            # The requirement uses || to indicate OR, so the module supports any of these versions
-            if current_major_version in requirement_major_versions:
+            req_parts = entry.get('requirement_parts', [])
+            if not req_parts and 'requirement' in entry:
+                req_parts = [p.strip() for p in re.split(r'\|+', entry['requirement']) if p.strip()]
+
+            if any(self._is_clause_satisfied(part) for part in req_parts):
                 suitable_entries.append(entry)
 
         # apply post-filtering if the lock version is used and the module version is specified
         if self.use_lock_version and self.module.version:
-            suitable_entries = [
-                entry for entry in suitable_entries
-                if version.parse(entry['version']) >= version.parse(self.module.version)
-            ]
+            filtered = []
+            for entry in suitable_entries:
+                try:
+                    if version.parse(entry['version']) >= version.parse(self.module.version):
+                        filtered.append(entry)
+                except Exception:
+                    filtered.append(entry)
+            suitable_entries = filtered
+
         return suitable_entries
+

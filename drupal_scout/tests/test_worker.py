@@ -161,6 +161,46 @@ class TestWorker(TestCase):
         # Should find no entries for Drupal 11
         self.assertEqual(len(suitable), 0)
 
+    def test_find_suitable_entries_complex_specifiers(self):
+        """
+        Test finding suitable entries with complex requirements like ^10.2 || <10.5, 10.2<10.5, >=9.5 <11.
+        """
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.6.3')
+        
+        transitive_entries = [
+            {'version': '1.0.0', 'requirement': '10.2<10.5', 'requirement_parts': ['10.2<10.5']},
+            {'version': '2.0.0', 'requirement': '^10.2 || <10.5', 'requirement_parts': ['^10.2', '<10.5']},
+            {'version': '3.0.0', 'requirement': '>=9.5 <11', 'requirement_parts': ['>=9.5 <11']},
+        ]
+        
+        suitable = worker.find_suitable_entries(transitive_entries)
+        
+        # 10.6.3 satisfies ^10.2 (>=10.2) and >=9.5 <11, but not 10.2<10.5 (<10.5)
+        self.assertEqual(len(suitable), 2)
+        self.assertEqual(suitable[0]['version'], '2.0.0')
+        self.assertEqual(suitable[1]['version'], '3.0.0')
+
+    def test_find_suitable_entries_unparseable_requirement_fallback(self):
+        """
+        Test that unparseable or malformed requirement strings log warnings and do not crash the worker.
+        """
+        module = Module(name='drupal/test_module')
+        worker = Worker(module=module, current_core='10.6.3')
+        
+        transitive_entries = [
+            {'version': '1.0.0', 'requirement': 'invalid_specifier_!@#', 'requirement_parts': ['invalid_specifier_!@#']},
+            {'version': '2.0.0', 'requirement': '10.x.x', 'requirement_parts': ['10.x.x']},
+        ]
+        
+        suitable = worker.find_suitable_entries(transitive_entries)
+        # Should gracefully evaluate without raising an exception
+        self.assertTrue(isinstance(suitable, list))
+        # '10.x.x' should match via major-version fallback (major 10 == current core major 10)
+        # 'invalid_specifier_!@#' has no digits to extract, so it should not match
+        self.assertEqual(len(suitable), 1)
+        self.assertEqual(suitable[0]['version'], '2.0.0')
+
 
 @pytest.mark.asyncio
 async def test_get_retries_on_connection_error():
