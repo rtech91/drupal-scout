@@ -25,16 +25,17 @@ class JSONFormatter(Formatter):
                 'suitable_entries': [],
                 'failed': module.failed
             }
-            if module.git_audit is not None:
-                mod_dict['git_audit'] = {
-                    'module_path': module.git_audit.module_path,
-                    'index_status': module.git_audit.index_status.value if hasattr(module.git_audit.index_status, 'value') else str(module.git_audit.index_status),
-                    'history_status': module.git_audit.history_status.value if hasattr(module.git_audit.history_status, 'value') else str(module.git_audit.history_status),
-                    'index_reason': module.git_audit.index_reason,
-                    'history_reason': module.git_audit.history_reason,
-                    'tracked_files_count': module.git_audit.tracked_files_count,
-                    'recent_commits': module.git_audit.recent_commits,
-                    'patches': module.git_audit.patches,
+            if module.deep_scan is not None:
+                mod_dict['deep_scan'] = {
+                    'mode': module.deep_scan.mode,
+                    'module_path': module.deep_scan.module_path,
+                    'index_status': module.deep_scan.index_status.value if hasattr(module.deep_scan.index_status, 'value') else str(module.deep_scan.index_status),
+                    'history_status': module.deep_scan.history_status.value if hasattr(module.deep_scan.history_status, 'value') else str(module.deep_scan.history_status),
+                    'index_reason': module.deep_scan.index_reason,
+                    'history_reason': module.deep_scan.history_reason,
+                    'tracked_files_count': module.deep_scan.tracked_files_count,
+                    'recent_commits': module.deep_scan.recent_commits,
+                    'patches': module.deep_scan.patches,
                 }
 
 

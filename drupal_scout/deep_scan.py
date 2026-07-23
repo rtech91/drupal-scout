@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from drupal_scout.module import Module, AuditStatus, ModuleGitAudit
+from drupal_scout.module import Module, AuditStatus, ModuleDeepScan
 
 
 def resolve_composer_patches(project_dir: str | Path) -> dict[str, list[dict[str, str]]]:
@@ -110,12 +110,12 @@ def resolve_module_path(package_name: str, project_dir: str | Path) -> tuple[Pat
     return resolved_path, None
 
 
-def perform_git_audit(
+def perform_deep_scan(
     package_name: str,
     project_dir: str | Path,
     mode: str = "all",
     patches_map: dict | None = None
-) -> ModuleGitAudit:
+) -> ModuleDeepScan:
     """
     Perform a read-only local deep scan for a specified module.
     
@@ -123,13 +123,13 @@ def perform_git_audit(
     :param project_dir: Project root directory
     :param mode: Deep scan mode ('all', 'patches', or 'git')
     :param patches_map: Optional pre-resolved patch map
-    :return: ModuleGitAudit instance
+    :return: ModuleDeepScan instance
     """
     mode_normalized = str(mode).lower() if mode else "all"
     if mode_normalized not in ("all", "patches", "git"):
         mode_normalized = "all"
 
-    audit = ModuleGitAudit(mode=mode_normalized)
+    audit = ModuleDeepScan(mode=mode_normalized)
 
     if mode_normalized in ("all", "patches"):
         if patches_map is None:
@@ -266,15 +266,15 @@ def perform_git_audit(
     return audit
 
 
-def audit_module_sync(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleGitAudit:
+def audit_module_sync(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleDeepScan:
     module_name = module.name if isinstance(module, Module) else module
-    audit = perform_git_audit(module_name, project_dir, mode=mode, patches_map=patches_map)
+    audit = perform_deep_scan(module_name, project_dir, mode=mode, patches_map=patches_map)
     if isinstance(module, Module):
-        module.git_audit = audit
+        module.deep_scan = audit
     return audit
 
 
-async def audit_module_async(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleGitAudit:
+async def audit_module_async(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleDeepScan:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, audit_module_sync, module, project_dir, mode, patches_map)
 
@@ -288,8 +288,8 @@ async def audit_modules_async(modules: list[Module], project_dir: str | Path, mo
         patches_map = {}
 
     def _audit_one(mod: Module):
-        audit = perform_git_audit(mod.name, project_dir, mode=mode_normalized, patches_map=patches_map)
-        mod.git_audit = audit
+        audit = perform_deep_scan(mod.name, project_dir, mode=mode_normalized, patches_map=patches_map)
+        mod.deep_scan = audit
         return audit
 
     tasks = [loop.run_in_executor(None, _audit_one, mod) for mod in modules]

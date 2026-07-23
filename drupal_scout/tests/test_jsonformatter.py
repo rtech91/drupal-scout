@@ -100,15 +100,15 @@ class TestJSONFormatter(TestCase):
         # Failed module should have no entries
         self.assertEqual(len(result[2]['suitable_entries']), 0)
 
-    def test_format_module_with_git_audit(self):
+    def test_format_module_with_deep_scan(self):
         """
-        Test that git_audit field is included when present on the module.
+        Test that deep_scan field is included when present on the module.
         """
-        from drupal_scout.module import ModuleGitAudit, AuditStatus
+        from drupal_scout.module import ModuleDeepScan, AuditStatus
 
         module = Module(name='drupal/webform')
         module.version = '6.2.0'
-        module.git_audit = ModuleGitAudit(
+        module.deep_scan = ModuleDeepScan(
             module_path='web/modules/contrib/webform',
             index_status=AuditStatus.FOUND,
             history_status=AuditStatus.CLEAR,
@@ -118,20 +118,21 @@ class TestJSONFormatter(TestCase):
 
         result = json.loads(self.formatter.format([module]))
         self.assertEqual(len(result), 1)
-        self.assertIn('git_audit', result[0])
-        self.assertEqual(result[0]['git_audit']['module_path'], 'web/modules/contrib/webform')
-        self.assertEqual(result[0]['git_audit']['index_status'], 'found')
-        self.assertEqual(result[0]['git_audit']['history_status'], 'clear')
-        self.assertIsNone(result[0]['git_audit']['index_reason'])
-        self.assertIsNone(result[0]['git_audit']['history_reason'])
+        self.assertIn('deep_scan', result[0])
+        self.assertEqual(result[0]['deep_scan']['module_path'], 'web/modules/contrib/webform')
+        self.assertEqual(result[0]['deep_scan']['index_status'], 'found')
+        self.assertEqual(result[0]['deep_scan']['history_status'], 'clear')
+        self.assertIsNone(result[0]['deep_scan']['index_reason'])
+        self.assertIsNone(result[0]['deep_scan']['history_reason'])
+        self.assertEqual(result[0]['deep_scan']['mode'], 'all')
 
-    def test_format_module_without_git_audit(self):
+    def test_format_module_without_deep_scan(self):
         """
-        Test that git_audit field is omitted when not present on the module.
+        Test that deep_scan field is omitted when not present on the module.
         """
         module = Module(name='drupal/webform')
         module.version = '6.2.0'
 
         result = json.loads(self.formatter.format([module]))
         self.assertEqual(len(result), 1)
-        self.assertNotIn('git_audit', result[0])
+        self.assertNotIn('deep_scan', result[0])

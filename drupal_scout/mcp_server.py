@@ -133,7 +133,7 @@ async def perform_full_project_scan(
     Returns:
         A JSON object with keys:
         - modules: list of module scan results (name, version,
-          suitable_entries, failed, git_audit)
+          suitable_entries, failed, deep_scan)
         - drupal_core_version: detected core version string
         - lock_file_used: whether composer.lock was used
         - error: error message if the scan could not proceed

@@ -457,8 +457,8 @@ async def test_output_purity_restored_after_error():
 
 
 @pytest.mark.asyncio
-async def test_scan_specific_modules_git_audit_true(make_composer_project, make_git_repo):
-    """Verify MCP scan_specific_modules includes git_audit when requested."""
+async def test_scan_specific_modules_deep_scan_true(make_composer_project, make_git_repo):
+    """Verify MCP scan_specific_modules includes deep_scan when requested."""
     import subprocess
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
@@ -481,14 +481,14 @@ async def test_scan_specific_modules_git_audit_true(make_composer_project, make_
 
     assert "modules" in result
     assert len(result["modules"]) == 1
-    assert "git_audit" in result["modules"][0]
-    assert result["modules"][0]["git_audit"]["index_status"] == "found"
-    assert result["modules"][0]["git_audit"]["history_status"] == "found"
+    assert "deep_scan" in result["modules"][0]
+    assert result["modules"][0]["deep_scan"]["index_status"] == "found"
+    assert result["modules"][0]["deep_scan"]["history_status"] == "found"
 
 
 @pytest.mark.asyncio
-async def test_scan_specific_modules_git_audit_default_false(make_composer_project, make_git_repo):
-    """Verify MCP scan_specific_modules omits git_audit by default."""
+async def test_scan_specific_modules_deep_scan_default_false(make_composer_project, make_git_repo):
+    """Verify MCP scan_specific_modules omits deep_scan by default."""
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
 
@@ -502,11 +502,11 @@ async def test_scan_specific_modules_git_audit_default_false(make_composer_proje
 
     assert "modules" in result
     assert len(result["modules"]) == 1
-    assert "git_audit" not in result["modules"][0]
+    assert "deep_scan" not in result["modules"][0]
 
 
 @pytest.mark.asyncio
-async def test_scan_specific_modules_git_audit_unavailable_status(make_composer_project):
+async def test_scan_specific_modules_deep_scan_unavailable_status(make_composer_project):
     """Verify MCP scan_specific_modules returns unavailable audit status for non-git dir."""
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
@@ -523,7 +523,7 @@ async def test_scan_specific_modules_git_audit_unavailable_status(make_composer_
         )
 
     assert "modules" in result
-    audit = result["modules"][0]["git_audit"]
+    audit = result["modules"][0]["deep_scan"]
     assert audit["index_status"] == "unavailable"
     assert audit["history_status"] == "unavailable"
     assert "Not a Git repository" in audit["index_reason"]
@@ -562,8 +562,8 @@ async def test_perform_full_project_scan_deep_scan(make_composer_project, make_g
 
     assert "modules" in result
     assert len(result["modules"]) == 1
-    assert "git_audit" in result["modules"][0]
-    audit = result["modules"][0]["git_audit"]
+    assert "deep_scan" in result["modules"][0]
+    audit = result["modules"][0]["deep_scan"]
     assert audit["index_status"] == "found"
     assert len(audit["patches"]) == 1
     assert audit["patches"][0]["description"] == "Fix webform"

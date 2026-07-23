@@ -14,7 +14,7 @@ from importlib.metadata import PackageNotFoundError
 import pytest
 
 from drupal_scout.application import Application
-from drupal_scout.module import Module
+from drupal_scout.module import Module, AuditStatus
 
 
 class TestApplication(TestCase):
@@ -671,7 +671,7 @@ async def test_run_targeted_scan_exits_when_core_cannot_be_detected():
 
 
 @pytest.mark.asyncio
-async def test_git_audit_orchestration(make_composer_project, make_git_repo):
+async def test_deep_scan_orchestration(make_composer_project, make_git_repo):
     """Test targeted scan orchestration with --git-audit for single and multiple modules."""
     project_dir = make_composer_project(packages_map={
         "drupal/webform": "../../web/modules/contrib/webform",
@@ -702,10 +702,10 @@ async def test_git_audit_orchestration(make_composer_project, make_git_repo):
             await app.run()
 
         assert len(app.modules) == 2
-        assert app.modules['drupal/webform'].git_audit is not None
-        assert app.modules['drupal/webform'].git_audit.index_status == 'found'
-        assert app.modules['drupal/token'].git_audit is not None
-        assert app.modules['drupal/token'].git_audit.index_status == 'found'
+        assert app.modules['drupal/webform'].deep_scan is not None
+        assert app.modules['drupal/webform'].deep_scan.index_status == 'found'
+        assert app.modules['drupal/token'].deep_scan is not None
+        assert app.modules['drupal/token'].deep_scan.index_status == 'found'
 
 
 @pytest.mark.asyncio
@@ -743,7 +743,7 @@ async def test_global_deep_scan_orchestration(make_composer_project, make_git_re
             await app.run()
 
         assert 'drupal/webform' in app.modules
-        audit = app.modules['drupal/webform'].git_audit
+        audit = app.modules['drupal/webform'].deep_scan
         assert audit is not None
         assert audit.index_status == 'found'
         assert len(audit.patches) == 1
@@ -752,7 +752,7 @@ async def test_global_deep_scan_orchestration(make_composer_project, make_git_re
 
 
 @pytest.mark.asyncio
-async def test_git_audit_continuation_on_partial_failure(make_composer_project, make_git_repo):
+async def test_deep_scan_continuation_on_partial_failure(make_composer_project, make_git_repo):
     """Test that failure to resolve one module does not halt auditing of other modules."""
     project_dir = make_composer_project(packages_map={
         "drupal/webform": "../../web/modules/contrib/webform",
@@ -778,8 +778,77 @@ async def test_git_audit_continuation_on_partial_failure(make_composer_project, 
         ]):
             await app.run()
 
-        assert app.modules['drupal/webform'].git_audit.index_status == 'found'
-        assert app.modules['drupal/token'].git_audit.index_status == 'unavailable'
-        assert "does not exist" in app.modules['drupal/token'].git_audit.index_reason
+        assert app.modules['drupal/webform'].deep_scan.index_status == 'found'
+        assert app.modules['drupal/token'].deep_scan.index_status == 'unavailable'
+        assert "does not exist" in app.modules['drupal/token'].deep_scan.index_reason
 
 
+@pytest.mark.asyncio
+async def test_deep_scan_mode_patches_orchestration(make_composer_project, make_git_repo):
+    """Test targeted scan with --deep-scan=patches only resolves patches, not git."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}}
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(json.dumps({
+        "require": {"drupal/core": "^10.0.0"},
+        "extra": {"patches": {"drupal/webform": {"Fix webform": "patches/webform.patch"}}}
+    }))
+    (project_dir / "composer.lock").write_text(json.dumps({
+        "packages": [{"name": "drupal/core", "version": "10.0.0"}]
+    }))
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+
+    app = Application()
+    with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', [
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', '--deep-scan=patches'
+        ]):
+            await app.run()
+
+        audit = app.modules['drupal/webform'].deep_scan
+        assert audit is not None
+        assert audit.mode == 'patches'
+        assert len(audit.patches) == 1
+        assert audit.index_status == AuditStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_deep_scan_mode_git_orchestration(make_composer_project, make_git_repo):
+    """Test targeted scan with --deep-scan=git only checks git, not patches."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}}
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(json.dumps({
+        "require": {"drupal/core": "^10.0.0"},
+        "extra": {"patches": {"drupal/webform": {"Fix webform": "patches/webform.patch"}}}
+    }))
+    (project_dir / "composer.lock").write_text(json.dumps({
+        "packages": [{"name": "drupal/core", "version": "10.0.0"}]
+    }))
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', [
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', '--deep-scan=git'
+        ]):
+            await app.run()
+
+        audit = app.modules['drupal/webform'].deep_scan
+        assert audit is not None
+        assert audit.mode == 'git'
+        assert audit.index_status == AuditStatus.FOUND
+        assert len(audit.patches) == 0

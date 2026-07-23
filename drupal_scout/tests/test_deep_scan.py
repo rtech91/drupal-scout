@@ -3,8 +3,8 @@ import subprocess
 from pathlib import Path
 import pytest
 
-from drupal_scout.module import Module, AuditStatus, ModuleGitAudit
-from drupal_scout.deep_scan import audit_module_sync, resolve_module_path, perform_git_audit, resolve_composer_patches
+from drupal_scout.module import Module, AuditStatus, ModuleDeepScan
+from drupal_scout.deep_scan import audit_module_sync, resolve_module_path, perform_deep_scan, resolve_composer_patches
 
 
 def test_resolve_module_path_success(make_composer_project, tmp_path):
@@ -39,7 +39,7 @@ def test_resolve_module_path_directory_does_not_exist(make_composer_project):
     assert "does not exist" in reason
 
 
-def test_git_audit_found_indexed_and_history(make_composer_project, make_git_repo, tmp_path):
+def test_deep_scan_found_indexed_and_history(make_composer_project, make_git_repo, tmp_path):
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
     mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
@@ -58,7 +58,7 @@ def test_git_audit_found_indexed_and_history(make_composer_project, make_git_rep
     assert audit.module_path == "web/modules/contrib/webform"
 
 
-def test_git_audit_indexed_clear_history(make_composer_project, make_git_repo):
+def test_deep_scan_indexed_clear_history(make_composer_project, make_git_repo):
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
     # Initial commit so HEAD exists
@@ -78,7 +78,7 @@ def test_git_audit_indexed_clear_history(make_composer_project, make_git_repo):
     assert audit.history_status == AuditStatus.CLEAR
 
 
-def test_git_audit_clear_indexed_clear_history(make_composer_project, make_git_repo):
+def test_deep_scan_clear_indexed_clear_history(make_composer_project, make_git_repo):
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
     (project_dir / "README.md").write_text("Hello")
@@ -97,7 +97,7 @@ def test_git_audit_clear_indexed_clear_history(make_composer_project, make_git_r
     assert audit.history_status == AuditStatus.CLEAR
 
 
-def test_git_audit_non_git_directory(make_composer_project):
+def test_deep_scan_non_git_directory(make_composer_project):
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
     mod_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +110,7 @@ def test_git_audit_non_git_directory(make_composer_project):
     assert "Not a Git repository" in audit.index_reason
 
 
-def test_git_audit_shallow_repository(make_composer_project, make_git_repo, tmp_path):
+def test_deep_scan_shallow_repository(make_composer_project, make_git_repo, tmp_path):
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     make_git_repo(project_dir)
     (project_dir / "README.md").write_text("Hello")
@@ -146,7 +146,7 @@ def test_git_audit_shallow_repository(make_composer_project, make_git_repo, tmp_
     assert "Shallow repository" in audit2.history_reason
 
 
-def test_git_audit_path_outside_repo(make_composer_project, make_git_repo, tmp_path):
+def test_deep_scan_path_outside_repo(make_composer_project, make_git_repo, tmp_path):
     repo_dir = tmp_path / "repo"
     make_git_repo(repo_dir)
 
@@ -184,7 +184,7 @@ def test_resolve_composer_patches_external_file(make_composer_project):
     assert patches["drupal/ctools"][0]["source"] == "https://drupal.org/123.patch"
 
 
-def test_git_audit_includes_patches(make_composer_project, make_git_repo):
+def test_deep_scan_includes_patches(make_composer_project, make_git_repo):
     project_dir = make_composer_project(
         packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
         patches_inline={"drupal/webform": {"Test patch": "patches/test.patch"}}
@@ -238,11 +238,11 @@ def test_resolve_module_path_non_list_packages(tmp_path):
     assert "Invalid format" in reason
 
 
-def test_perform_git_audit_no_git_binary(make_composer_project):
+def test_perform_deep_scan_no_git_binary(make_composer_project):
     from unittest.mock import patch
     project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
     with patch("shutil.which", return_value=None):
-        audit = perform_git_audit("drupal/webform", project_dir)
+        audit = perform_deep_scan("drupal/webform", project_dir)
         assert audit.index_status == AuditStatus.UNAVAILABLE
         assert "Git executable not found" in audit.index_reason
 
@@ -258,7 +258,8 @@ async def test_audit_module_async(make_composer_project, make_git_repo):
     assert audit.index_status == AuditStatus.CLEAR
 
 
-def test_perform_git_audit_mode_patches(make_composer_project, make_git_repo):
+def test_perform_deep_scan_mode_patches(make_composer_project, make_git_repo):
+    from unittest.mock import patch as mock_patch
     project_dir = make_composer_project(
         packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
         patches_inline={"drupal/webform": {"Patch 1": "p1.patch"}}
@@ -268,7 +269,9 @@ def test_perform_git_audit_mode_patches(make_composer_project, make_git_repo):
     mod_dir.mkdir(parents=True, exist_ok=True)
 
     module = Module("drupal/webform")
-    audit = audit_module_sync(module, project_dir, mode="patches")
+    with mock_patch("drupal_scout.deep_scan.subprocess.run") as mock_sub:
+        audit = audit_module_sync(module, project_dir, mode="patches")
+        mock_sub.assert_not_called()
 
     assert audit.mode == "patches"
     assert len(audit.patches) == 1
@@ -277,7 +280,7 @@ def test_perform_git_audit_mode_patches(make_composer_project, make_git_repo):
     assert audit.index_status == AuditStatus.UNAVAILABLE
 
 
-def test_perform_git_audit_mode_git(make_composer_project, make_git_repo):
+def test_perform_deep_scan_mode_git(make_composer_project, make_git_repo):
     project_dir = make_composer_project(
         packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
         patches_inline={"drupal/webform": {"Patch 1": "p1.patch"}}

@@ -10,7 +10,7 @@ class AuditStatus(str, Enum):
 
 
 @dataclass
-class ModuleGitAudit:
+class ModuleDeepScan:
     mode: str = "all"
     module_path: str | None = None
     index_status: AuditStatus = AuditStatus.UNAVAILABLE
@@ -43,4 +43,4 @@ class Module:
         self.version: str | None = None
         self.transitive_entries: list = []
         self.suitable_entries: list = []
-        self.git_audit: ModuleGitAudit | None = None
+        self.deep_scan: ModuleDeepScan | None = None

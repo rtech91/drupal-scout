@@ -27,10 +27,11 @@ class TableFormatter(Formatter):
         table.add_column("Version", style="green")
         table.add_column("Suitable entries", style="white")
 
-        has_git_audit = any(m.git_audit is not None for m in modules)
-        mode = next((m.git_audit.mode for m in modules if m.git_audit is not None), "all") if has_git_audit else "all"
+        has_deep_scan = any(m.deep_scan is not None for m in modules)
+        # All modules in a single scan share the same mode
+        mode = next((m.deep_scan.mode for m in modules if m.deep_scan is not None), "all") if has_deep_scan else "all"
 
-        if has_git_audit:
+        if has_deep_scan:
             if mode in ("all", "git"):
                 table.add_column("Git index", style="white")
                 table.add_column("Git history", style="white")
@@ -59,11 +60,11 @@ class TableFormatter(Formatter):
                 entries_text
             ]
 
-            if has_git_audit:
-                if module.git_audit is not None:
-                    idx_val = module.git_audit.index_status.value if hasattr(module.git_audit.index_status, 'value') else str(module.git_audit.index_status)
-                    hist_val = module.git_audit.history_status.value if hasattr(module.git_audit.history_status, 'value') else str(module.git_audit.history_status)
-                    patch_cnt = len(module.git_audit.patches)
+            if has_deep_scan:
+                if module.deep_scan is not None:
+                    idx_val = module.deep_scan.index_status.value if hasattr(module.deep_scan.index_status, 'value') else str(module.deep_scan.index_status)
+                    hist_val = module.deep_scan.history_status.value if hasattr(module.deep_scan.history_status, 'value') else str(module.deep_scan.history_status)
+                    patch_cnt = len(module.deep_scan.patches)
                     patch_val = f"{patch_cnt} patch" if patch_cnt == 1 else (f"{patch_cnt} patches" if patch_cnt > 1 else "none")
 
                     if mode in ("all", "git"):
@@ -80,12 +81,12 @@ class TableFormatter(Formatter):
 
             table.add_row(*row)
 
-        if has_git_audit:
+        if has_deep_scan:
             detail_texts = []
             clean_count = 0
             for module in modules:
-                if module.git_audit is not None:
-                    audit = module.git_audit
+                if module.deep_scan is not None:
+                    audit = module.deep_scan
                     has_git_findings = (
                         audit.index_status.value in ("found", "unavailable", "incomplete")
                         or audit.history_status.value in ("found", "unavailable", "incomplete")
