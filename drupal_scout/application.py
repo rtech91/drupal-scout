@@ -96,8 +96,11 @@ class Application:
         )
         await workers_manager.run()
 
-        if getattr(args, "deep_scan", False) or getattr(args, "git_audit", False):
-            await audit_modules_async(list(self.__modules.values()), args.directory)
+        deep_scan_mode = getattr(args, "deep_scan", None)
+        if deep_scan_mode:
+            mode_str = "all" if deep_scan_mode is True else str(deep_scan_mode)
+            await audit_modules_async(list(self.__modules.values()), args.directory, mode=mode_str)
+
 
         formatter = FormatterFactory.get_formatter(args)
         if formatter:
@@ -164,8 +167,11 @@ class Application:
             )
             await workers_manager.run()
 
-            if getattr(args, "deep_scan", False) or getattr(args, "git_audit", False):
-                await audit_modules_async(list(self.__modules.values()), args.directory)
+            deep_scan_mode = getattr(args, "deep_scan", None)
+            if deep_scan_mode:
+                mode_str = "all" if deep_scan_mode is True else str(deep_scan_mode)
+                await audit_modules_async(list(self.__modules.values()), args.directory, mode=mode_str)
+
 
             # output the results
             formatter = FormatterFactory.get_formatter(args)
@@ -255,12 +261,15 @@ class Application:
 
         parser.add_argument(
             '--deep-scan',
-            '--git-audit',
             dest='deep_scan',
-            help='Perform a read-only local deep scan (Git index, commit history, and Composer patches) for modules.',
-            action='store_true',
-            default=False
+            nargs='?',
+            const='all',
+            default=None,
+            choices=['all', 'patches', 'git'],
+            help='Perform a read-only local deep scan (Git index, commit history, and Composer patches). Optional mode: all (default), patches, git.'
         )
+
+
 
 
         subparsers = parser.add_subparsers(dest="command")

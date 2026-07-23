@@ -110,20 +110,35 @@ def resolve_module_path(package_name: str, project_dir: str | Path) -> tuple[Pat
     return resolved_path, None
 
 
-def perform_git_audit(package_name: str, project_dir: str | Path, patches_map: dict | None = None) -> ModuleGitAudit:
+def perform_git_audit(
+    package_name: str,
+    project_dir: str | Path,
+    mode: str = "all",
+    patches_map: dict | None = None
+) -> ModuleGitAudit:
     """
-    Perform a read-only Git audit and Composer patch resolution for a specified module.
+    Perform a read-only local deep scan for a specified module.
     
     :param package_name: Composer package name
     :param project_dir: Project root directory
+    :param mode: Deep scan mode ('all', 'patches', or 'git')
     :param patches_map: Optional pre-resolved patch map
     :return: ModuleGitAudit instance
     """
-    audit = ModuleGitAudit()
+    mode_normalized = str(mode).lower() if mode else "all"
+    if mode_normalized not in ("all", "patches", "git"):
+        mode_normalized = "all"
 
-    if patches_map is None:
-        patches_map = resolve_composer_patches(project_dir)
-    audit.patches = patches_map.get(package_name, [])
+    audit = ModuleGitAudit(mode=mode_normalized)
+
+    if mode_normalized in ("all", "patches"):
+        if patches_map is None:
+            patches_map = resolve_composer_patches(project_dir)
+        audit.patches = patches_map.get(package_name, [])
+
+    if mode_normalized == "patches":
+        # Skip Git repository inspection entirely
+        return audit
 
     if not shutil.which("git"):
         audit.index_status = AuditStatus.UNAVAILABLE
@@ -251,27 +266,32 @@ def perform_git_audit(package_name: str, project_dir: str | Path, patches_map: d
     return audit
 
 
-def audit_module_sync(module: Module | str, project_dir: str | Path, patches_map: dict | None = None) -> ModuleGitAudit:
+def audit_module_sync(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleGitAudit:
     module_name = module.name if isinstance(module, Module) else module
-    audit = perform_git_audit(module_name, project_dir, patches_map=patches_map)
+    audit = perform_git_audit(module_name, project_dir, mode=mode, patches_map=patches_map)
     if isinstance(module, Module):
         module.git_audit = audit
     return audit
 
 
-async def audit_module_async(module: Module | str, project_dir: str | Path, patches_map: dict | None = None) -> ModuleGitAudit:
+async def audit_module_async(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleGitAudit:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, audit_module_sync, module, project_dir, patches_map)
+    return await loop.run_in_executor(None, audit_module_sync, module, project_dir, mode, patches_map)
 
 
-async def audit_modules_async(modules: list[Module], project_dir: str | Path) -> None:
+async def audit_modules_async(modules: list[Module], project_dir: str | Path, mode: str = "all") -> None:
     loop = asyncio.get_running_loop()
-    patches_map = await loop.run_in_executor(None, resolve_composer_patches, project_dir)
+    mode_normalized = str(mode).lower() if mode else "all"
+    if mode_normalized in ("all", "patches"):
+        patches_map = await loop.run_in_executor(None, resolve_composer_patches, project_dir)
+    else:
+        patches_map = {}
 
     def _audit_one(mod: Module):
-        audit = perform_git_audit(mod.name, project_dir, patches_map=patches_map)
+        audit = perform_git_audit(mod.name, project_dir, mode=mode_normalized, patches_map=patches_map)
         mod.git_audit = audit
         return audit
 
     tasks = [loop.run_in_executor(None, _audit_one, mod) for mod in modules]
     await asyncio.gather(*tasks)
+

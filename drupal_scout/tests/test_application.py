@@ -696,7 +696,8 @@ async def test_git_audit_orchestration(make_composer_project, make_git_repo):
     with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
         MockWorkersManager.return_value.run = AsyncMock()
         with patch('sys.argv', [
-            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--git-audit'
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--deep-scan'
+
         ]):
             await app.run()
 
@@ -772,7 +773,8 @@ async def test_git_audit_continuation_on_partial_failure(make_composer_project, 
     with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
         MockWorkersManager.return_value.run = AsyncMock()
         with patch('sys.argv', [
-            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--git-audit'
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--deep-scan'
+
         ]):
             await app.run()
 

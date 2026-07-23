@@ -475,7 +475,8 @@ async def test_scan_specific_modules_git_audit_true(make_composer_project, make_
             modules=["drupal/webform"],
             core="10.0.0",
             directory=str(project_dir),
-            git_audit=True,
+            deep_scan=True,
+
         )
 
     assert "modules" in result
@@ -517,7 +518,8 @@ async def test_scan_specific_modules_git_audit_unavailable_status(make_composer_
             modules=["drupal/webform"],
             core="10.0.0",
             directory=str(project_dir),
-            git_audit=True,
+            deep_scan=True,
+
         )
 
     assert "modules" in result

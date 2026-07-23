@@ -257,3 +257,40 @@ async def test_audit_module_async(make_composer_project, make_git_repo):
     audit = await audit_module_async("drupal/webform", project_dir)
     assert audit.index_status == AuditStatus.CLEAR
 
+
+def test_perform_git_audit_mode_patches(make_composer_project, make_git_repo):
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Patch 1": "p1.patch"}}
+    )
+    make_git_repo(project_dir)
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    module = Module("drupal/webform")
+    audit = audit_module_sync(module, project_dir, mode="patches")
+
+    assert audit.mode == "patches"
+    assert len(audit.patches) == 1
+    assert audit.patches[0]["description"] == "Patch 1"
+    # Git status remains default/unavailable because git checks were skipped
+    assert audit.index_status == AuditStatus.UNAVAILABLE
+
+
+def test_perform_git_audit_mode_git(make_composer_project, make_git_repo):
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Patch 1": "p1.patch"}}
+    )
+    make_git_repo(project_dir)
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    module = Module("drupal/webform")
+    audit = audit_module_sync(module, project_dir, mode="git")
+
+    assert audit.mode == "git"
+    assert len(audit.patches) == 0
+    assert audit.index_status == AuditStatus.CLEAR
+
+

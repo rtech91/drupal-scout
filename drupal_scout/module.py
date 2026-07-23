@@ -11,6 +11,7 @@ class AuditStatus(str, Enum):
 
 @dataclass
 class ModuleGitAudit:
+    mode: str = "all"
     module_path: str | None = None
     index_status: AuditStatus = AuditStatus.UNAVAILABLE
     history_status: AuditStatus = AuditStatus.UNAVAILABLE
@@ -19,6 +20,7 @@ class ModuleGitAudit:
     tracked_files_count: int = 0
     recent_commits: list[dict[str, str]] = field(default_factory=list)
     patches: list[dict[str, str]] = field(default_factory=list)
+
 
 
 

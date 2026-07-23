@@ -28,10 +28,14 @@ class TableFormatter(Formatter):
         table.add_column("Suitable entries", style="white")
 
         has_git_audit = any(m.git_audit is not None for m in modules)
+        mode = next((m.git_audit.mode for m in modules if m.git_audit is not None), "all") if has_git_audit else "all"
+
         if has_git_audit:
-            table.add_column("Git index", style="white")
-            table.add_column("Git history", style="white")
-            table.add_column("Patches", style="white")
+            if mode in ("all", "git"):
+                table.add_column("Git index", style="white")
+                table.add_column("Git history", style="white")
+            if mode in ("all", "patches"):
+                table.add_column("Patches", style="white")
 
         for module in modules:
             entries_text = Text()
@@ -40,7 +44,6 @@ class TableFormatter(Formatter):
                 for i, entry in enumerate(module.suitable_entries):
                     if i > 0:
                         entries_text.append("\n")
-                    # Using Rich style instead of ANSI codes
                     entries_text.append(f"v{entry['version']} ", style="white")
                     entries_text.append(f"[{entry['requirement']}]", style="grey70")
             elif module.failed:
@@ -62,13 +65,18 @@ class TableFormatter(Formatter):
                     hist_val = module.git_audit.history_status.value if hasattr(module.git_audit.history_status, 'value') else str(module.git_audit.history_status)
                     patch_cnt = len(module.git_audit.patches)
                     patch_val = f"{patch_cnt} patch" if patch_cnt == 1 else (f"{patch_cnt} patches" if patch_cnt > 1 else "none")
-                    row.append(idx_val)
-                    row.append(hist_val)
-                    row.append(patch_val)
+
+                    if mode in ("all", "git"):
+                        row.append(idx_val)
+                        row.append(hist_val)
+                    if mode in ("all", "patches"):
+                        row.append(patch_val)
                 else:
-                    row.append("[dim]N/A[/dim]")
-                    row.append("[dim]N/A[/dim]")
-                    row.append("[dim]N/A[/dim]")
+                    if mode in ("all", "git"):
+                        row.append("[dim]N/A[/dim]")
+                        row.append("[dim]N/A[/dim]")
+                    if mode in ("all", "patches"):
+                        row.append("[dim]N/A[/dim]")
 
             table.add_row(*row)
 
@@ -78,15 +86,18 @@ class TableFormatter(Formatter):
             for module in modules:
                 if module.git_audit is not None:
                     audit = module.git_audit
-                    has_findings = (
-                        audit.index_status.value == "found"
-                        or audit.history_status.value == "found"
-                        or audit.index_status.value == "unavailable"
-                        or audit.history_status.value == "unavailable"
-                        or audit.index_status.value == "incomplete"
-                        or audit.history_status.value == "incomplete"
-                        or len(audit.patches) > 0
+                    has_git_findings = (
+                        audit.index_status.value in ("found", "unavailable", "incomplete")
+                        or audit.history_status.value in ("found", "unavailable", "incomplete")
                     )
+                    has_patch_findings = len(audit.patches) > 0
+
+                    if mode == "git":
+                        has_findings = has_git_findings
+                    elif mode == "patches":
+                        has_findings = has_patch_findings
+                    else:
+                        has_findings = has_git_findings or has_patch_findings
 
                     if not has_findings and len(modules) > 3:
                         clean_count += 1
@@ -94,22 +105,23 @@ class TableFormatter(Formatter):
 
                     lines = [f"[bold cyan]{module.name}[/bold cyan] ([dim]{audit.module_path or 'unknown path'}[/dim]):"]
 
-                    idx_status = audit.index_status.value if hasattr(audit.index_status, 'value') else str(audit.index_status)
-                    lines.append(f"  • [bold]Index:[/bold] {idx_status} ({audit.tracked_files_count} tracked files)")
-                    if audit.index_reason:
-                        lines.append(f"    [yellow]Reason: {audit.index_reason}[/yellow]")
+                    if mode in ("all", "git"):
+                        idx_status = audit.index_status.value if hasattr(audit.index_status, 'value') else str(audit.index_status)
+                        lines.append(f"  • [bold]Index:[/bold] {idx_status} ({audit.tracked_files_count} tracked files)")
+                        if audit.index_reason:
+                            lines.append(f"    [yellow]Reason: {audit.index_reason}[/yellow]")
 
-                    hist_status = audit.history_status.value if hasattr(audit.history_status, 'value') else str(audit.history_status)
-                    if audit.recent_commits:
-                        lines.append(f"  • [bold]Recent Commits ({len(audit.recent_commits)}):[/bold]")
-                        for c in audit.recent_commits:
-                            lines.append(f"    - [yellow]{c['hash']}[/yellow] {c['subject']}")
-                    else:
-                        lines.append(f"  • [bold]History:[/bold] {hist_status}")
-                        if audit.history_reason:
-                            lines.append(f"    [yellow]Reason: {audit.history_reason}[/yellow]")
+                        hist_status = audit.history_status.value if hasattr(audit.history_status, 'value') else str(audit.history_status)
+                        if audit.recent_commits:
+                            lines.append(f"  • [bold]Recent Commits ({len(audit.recent_commits)}):[/bold]")
+                            for c in audit.recent_commits:
+                                lines.append(f"    - [yellow]{c['hash']}[/yellow] {c['subject']}")
+                        else:
+                            lines.append(f"  • [bold]History:[/bold] {hist_status}")
+                            if audit.history_reason:
+                                lines.append(f"    [yellow]Reason: {audit.history_reason}[/yellow]")
 
-                    if audit.patches:
+                    if mode in ("all", "patches") and audit.patches:
                         lines.append(f"  • [bold]Applied Composer Patches ({len(audit.patches)}):[/bold]")
                         for p in audit.patches:
                             lines.append(f"    - [green]{p['description']}[/green] ([dim]{p['source']}[/dim])")

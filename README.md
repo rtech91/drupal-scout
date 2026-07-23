@@ -69,7 +69,8 @@ drupal-scout [-h] [-v] [-d DIRECTORY] [-n] [-l LIMIT] [-f {table,json,suggest}] 
 - `-s, --save-dump`: Use with `--format suggest` to save the suggested `composer.json` to disk.
 - `-c CORE, --core CORE`: Optional Drupal core version override (e.g., `10.0.0`).
 - `-m MODULES [MODULES ...], --modules MODULES [MODULES ...]`: Scan only specific modules, skipping full project discovery.
-- `--deep-scan`, `--git-audit`: Perform a read-only local deep scan (Git index, commit history, and applied Composer patches from `composer.json` or `composer.patches.json`) for global or targeted scans.
+- `--deep-scan[=MODE]`: Perform a read-only local deep scan for global or targeted scans. Optional mode: `all` (default, Git + Patches), `patches` (Composer patches only), or `git` (Git index + history only).
+
 
 ### Subcommands
 
@@ -91,16 +92,22 @@ uvx --from drupal-scout drupal-scout-mcp
 
 ### Deep Scan & Audit Examples
 
-Perform a deep scan across all project modules (global scan):
+Perform a complete deep scan across all project modules (global scan):
 
 ```bash
 drupal-scout --deep-scan
 ```
 
-Perform a deep scan for targeted modules:
+Perform a Composer patch-only scan:
 
 ```bash
-drupal-scout --directory /path/to/drupal --modules drupal/webform drupal/workbench --deep-scan
+drupal-scout --deep-scan=patches
+```
+
+Perform a Git audit scan for targeted modules:
+
+```bash
+drupal-scout --directory /path/to/drupal --modules drupal/webform drupal/workbench --deep-scan=git
 ```
 
 Perform a deep scan and output JSON:
@@ -108,5 +115,6 @@ Perform a deep scan and output JSON:
 ```bash
 drupal-scout --directory /path/to/drupal --deep-scan --format json
 ```
+
 
 
