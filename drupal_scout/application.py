@@ -1,16 +1,16 @@
-from sys import exit
-import asyncio
 import json
 import os
 from argparse import ArgumentParser
-import jq
-from .formatters.formatterfactory import FormatterFactory
-from .exceptions import *
-from .module import Module
-from .workers_manager import WorkersManager
-from .output import ConsoleOutputHandler, logger
-from .deep_scan import audit_modules_async
+from sys import exit
 
+import jq
+
+from .deep_scan import audit_modules_async
+from .exceptions import *
+from .formatters.formatterfactory import FormatterFactory
+from .module import Module
+from .output import ConsoleOutputHandler, logger
+from .workers_manager import WorkersManager
 
 
 class Application:
@@ -21,7 +21,9 @@ class Application:
     def __init__(self, output_handler=None):
         self.output = output_handler or ConsoleOutputHandler()
         self.__modules = {}
-        self.__drupal_core_version = "8.8"  # default and minimal supported Drupal core version for upgrade
+        self.__drupal_core_version = (
+            "8.8"  # default and minimal supported Drupal core version for upgrade
+        )
 
     @property
     def modules(self) -> dict:
@@ -63,7 +65,11 @@ class Application:
             # Full environment scan
             await self._run_environment_scan(args)
 
-        except (ComposerV1Exception, DirectoryNotFoundException, NoComposerJSONFileException) as e:
+        except (
+            ComposerV1Exception,
+            DirectoryNotFoundException,
+            NoComposerJSONFileException,
+        ) as e:
             logger.warning(e.message)
             exit(1)
 
@@ -92,15 +98,16 @@ class Application:
             current_core=self.__drupal_core_version,
             use_lock_version=use_lock_version,
             concurrency_limit=args.limit,
-            output=self.output
+            output=self.output,
         )
         await workers_manager.run()
 
         deep_scan_mode = getattr(args, "deep_scan", None)
         if deep_scan_mode:
             mode_str = "all" if deep_scan_mode is True else str(deep_scan_mode)
-            await audit_modules_async(list(self.__modules.values()), args.directory, mode=mode_str)
-
+            await audit_modules_async(
+                list(self.__modules.values()), args.directory, mode=mode_str
+            )
 
         formatter = FormatterFactory.get_formatter(args)
         if formatter:
@@ -132,7 +139,9 @@ class Application:
         """Scan all modules discovered from the Drupal project's composer files."""
         # check if the directory exists and whether the composer.json file exists in it
         if not os.path.isdir(args.directory):
-            raise DirectoryNotFoundException("The directory {} does not exist.".format(args.directory))
+            raise DirectoryNotFoundException(
+                f"The directory {args.directory} does not exist."
+            )
 
         # check if the directory contains the composer.json file
         if not os.path.isfile(os.path.join(args.directory, "composer.json")):
@@ -149,10 +158,14 @@ class Application:
         self.get_required_modules(args)
 
         if len(self.__modules) > 0:
-            if not args.no_lock and os.path.isfile(os.path.join(args.directory, "composer.lock")):
+            if not args.no_lock and os.path.isfile(
+                os.path.join(args.directory, "composer.lock")
+            ):
                 self.determine_module_versions(args)
             elif args.no_lock:
-                logger.warning("The composer.lock file was not used to determine the installed versions of the modules.")
+                logger.warning(
+                    "The composer.lock file was not used to determine the installed versions of the modules."
+                )
                 logger.warning(
                     "The only Drupal core version will be use to determine the transitive versions of the modules."
                 )
@@ -163,15 +176,16 @@ class Application:
                 current_core=self.__drupal_core_version,
                 use_lock_version=not args.no_lock,
                 concurrency_limit=args.limit,
-                output=self.output
+                output=self.output,
             )
             await workers_manager.run()
 
             deep_scan_mode = getattr(args, "deep_scan", None)
             if deep_scan_mode:
                 mode_str = "all" if deep_scan_mode is True else str(deep_scan_mode)
-                await audit_modules_async(list(self.__modules.values()), args.directory, mode=mode_str)
-
+                await audit_modules_async(
+                    list(self.__modules.values()), args.directory, mode=mode_str
+                )
 
             # output the results
             formatter = FormatterFactory.get_formatter(args)
@@ -193,14 +207,14 @@ class Application:
             "-v",
             "--version",
             action="version",
-            version="drupal-scout {}".format(self.get_version())
+            version=f"drupal-scout {self.get_version()}",
         )
         parser.add_argument(
             "-d",
             "--directory",
             help="The directory of the Drupal installation.",
             type=str,
-            default="."
+            default=".",
         )
         # special argument to support the composer.lock file
         parser.add_argument(
@@ -208,15 +222,15 @@ class Application:
             "--no-lock",
             help="Do not use the composer.lock file to determine the installed versions of the modules.",
             action="store_true",
-            default=False
+            default=False,
         )
         parser.add_argument(
             "-l",
             "--limit",
             help="Maximum number of concurrent network requests. This prevents overwhelming the upstream API "
-                "and hitting rate limits. Default: 10.",
+            "and hitting rate limits. Default: 10.",
             type=int,
-            default=10
+            default=10,
         )
 
         # "table" format is for human-readable output in the console
@@ -228,52 +242,51 @@ class Application:
             "--format",
             help="The output format. By default, the application will use the table format.",
             choices=["table", "json", "suggest"],
-            default="table"
+            default="table",
         )
 
         # the following argument is only available for the "suggest" format
         parser.add_argument(
-            '-s',
-            '--save-dump',
-            help='Use in pair with --format suggest to dump the suggested composer.json file to the specified path.',
+            "-s",
+            "--save-dump",
+            help="Use in pair with --format suggest to dump the suggested composer.json file to the specified path.",
             default=False,
-            action='store_true'
+            action="store_true",
         )
 
         parser.add_argument(
-            '-c',
-            '--core',
-            help='Optional Drupal core version override for targeted module scans (e.g. 10.0.0). '
-                  'If omitted, the core version is auto-detected from composer.lock/composer.json in --directory.',
+            "-c",
+            "--core",
+            help="Optional Drupal core version override for targeted module scans (e.g. 10.0.0). "
+            "If omitted, the core version is auto-detected from composer.lock/composer.json in --directory.",
             type=str,
-            default=None
-        )
-
-        parser.add_argument(
-            '-m',
-            '--modules',
-            nargs='+',
-            help='One or more specific Drupal module names to scan (e.g. drupal/webform drupal/ctools). '
-                 'When provided, the full environment scan is skipped. The tool still uses composer.lock from '
-                 '--directory for installed-version protection when available.',
-            default=[]
-        )
-
-        parser.add_argument(
-            '--deep-scan',
-            dest='deep_scan',
-            nargs='?',
-            const='all',
             default=None,
-            choices=['all', 'patches', 'git'],
-            help='Perform a read-only local deep scan (Git index, commit history, and Composer patches). Optional mode: all (default), patches, git.'
         )
 
+        parser.add_argument(
+            "-m",
+            "--modules",
+            nargs="+",
+            help="One or more specific Drupal module names to scan (e.g. drupal/webform drupal/ctools). "
+            "When provided, the full environment scan is skipped. The tool still uses composer.lock from "
+            "--directory for installed-version protection when available.",
+            default=[],
+        )
 
-
+        parser.add_argument(
+            "--deep-scan",
+            dest="deep_scan",
+            nargs="?",
+            const="all",
+            default=None,
+            choices=["all", "patches", "git"],
+            help="Perform a read-only local deep scan (Git index, commit history, and Composer patches). Optional mode: all (default), patches, git.",
+        )
 
         subparsers = parser.add_subparsers(dest="command")
-        info_parser = subparsers.add_parser('info', help='Diagnostic information about the tool and environment')
+        subparsers.add_parser(
+            "info", help="Diagnostic information about the tool and environment"
+        )
 
         return parser
 
@@ -284,14 +297,16 @@ class Application:
         """
         import importlib.metadata
         import re
-        
+
         try:
-            return importlib.metadata.version('drupal-scout')
+            return importlib.metadata.version("drupal-scout")
         except importlib.metadata.PackageNotFoundError:
             try:
                 # relative path to find pyproject.toml in the source tree
                 current_dir = os.path.dirname(os.path.abspath(__file__))
-                pyproject_path = os.path.join(os.path.dirname(current_dir), "pyproject.toml")
+                pyproject_path = os.path.join(
+                    os.path.dirname(current_dir), "pyproject.toml"
+                )
                 with open(pyproject_path, "r") as f:
                     content = f.read()
                     match = re.search(r'version\s*=\s*"([^"]+)"', content)
@@ -309,30 +324,55 @@ class Application:
 
         version = self.get_version()
 
-
         jq_status = "NOT FOUND OR NOT FUNCTIONAL"
         try:
-            subprocess.run(["jq", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run(
+                ["jq", "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
             jq_status = "FOUND and FUNCTIONAL"
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
-        composer_json_str = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.json")) else "NOT DETECTED"
-        composer_lock_str = "DETECTED" if os.path.isfile(os.path.join(args.directory, "composer.lock")) else "NOT DETECTED"
-        
+        composer_json_str = (
+            "DETECTED"
+            if os.path.isfile(os.path.join(args.directory, "composer.json"))
+            else "NOT DETECTED"
+        )
+        composer_lock_str = (
+            "DETECTED"
+            if os.path.isfile(os.path.join(args.directory, "composer.lock"))
+            else "NOT DETECTED"
+        )
+
         composer2_status_str = "DETECTED" if self.is_composer2(args) else "NOT DETECTED"
-        
+
         core_version = "[Unknown]"
         if composer_json_str == "DETECTED":
             try:
                 if composer_lock_str == "DETECTED":
-                    args_mock = type('Args', (object,), {"no_lock": False, "directory": args.directory})()
+                    args_mock = type(
+                        "Args",
+                        (object,),
+                        {"no_lock": False, "directory": args.directory},
+                    )()
                 else:
-                    args_mock = type('Args', (object,), {"no_lock": True, "directory": args.directory})()
-                
+                    args_mock = type(
+                        "Args",
+                        (object,),
+                        {"no_lock": True, "directory": args.directory},
+                    )()
+
                 # Use contextlib for cleaner stream suppression
-                import contextlib, io
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                import contextlib
+                import io
+
+                with (
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
                     self.determine_drupal_core_version(args_mock)
                     # Use public property to avoid __ direct access if possible
                     core_version = self.drupal_core_version
@@ -345,7 +385,7 @@ class Application:
             "composer.json": composer_json_str,
             "composer.lock": composer_lock_str,
             "Composer 2": composer2_status_str,
-            "Drupal Core Version": core_version
+            "Drupal Core Version": core_version,
         }
         self.output.render_info_table(f"Drupal Scout v{version} Status", status_data)
 
@@ -359,10 +399,11 @@ class Application:
         """
         # check whether the vendor directory exists and has a composer/platform_check.php file
         # because this clue is only available in Composer 2
-        if os.path.isdir(os.path.join(args.directory, "vendor")):
-            if os.path.isfile(os.path.join(args.directory, "vendor", "composer", "platform_check.php")):
-                return True
-        return False
+        return os.path.isdir(
+            os.path.join(args.directory, "vendor")
+        ) and os.path.isfile(
+            os.path.join(args.directory, "vendor", "composer", "platform_check.php")
+        )
 
     def determine_drupal_core_version(self, args):
         """
@@ -374,8 +415,13 @@ class Application:
         if not args.no_lock:
             with open(os.path.join(args.directory, "composer.lock"), "r") as f:
                 composer_lock = json.load(f)
-                self.__drupal_core_version = jq.compile(".packages[] | select(.name == \"drupal/core\") | .version") \
-                    .input(composer_lock).first()
+                self.__drupal_core_version = (
+                    jq.compile(
+                        '.packages[] | select(.name == "drupal/core") | .version'
+                    )
+                    .input(composer_lock)
+                    .first()
+                )
         else:
             with open(os.path.join(args.directory, "composer.json"), "r") as f:
                 composer_json = json.load(f)
@@ -383,12 +429,18 @@ class Application:
                 # or within the "drupal/core-recommended" requirement
                 if "drupal/core" in composer_json["require"]:
                     # clear special characters from the version
-                    self.__drupal_core_version = composer_json["require"]["drupal/core"] \
-                        .replace("^", "").replace("~", "")
+                    self.__drupal_core_version = (
+                        composer_json["require"]["drupal/core"]
+                        .replace("^", "")
+                        .replace("~", "")
+                    )
                 elif "drupal/core-recommended" in composer_json["require"]:
                     # clear special characters from the version
-                    self.__drupal_core_version = composer_json["require"]["drupal/core-recommended"] \
-                        .replace("^", "").replace("~", "")
+                    self.__drupal_core_version = (
+                        composer_json["require"]["drupal/core-recommended"]
+                        .replace("^", "")
+                        .replace("~", "")
+                    )
         logger.warning("The Drupal core version is: " + self.__drupal_core_version)
 
     def get_required_modules(self, args):
@@ -402,8 +454,14 @@ class Application:
         with open(os.path.join(args.directory, "composer.json"), "r") as f:
             composer_json = json.load(f)
             # load required modules, but only with drupal/* prefix and exclude modules with drupal/core prefix
-            found_modules = jq.compile(".require | keys | map(select(startswith(\"drupal/\"))) | map(select("
-                                       "startswith(\"drupal/core\") | not))").input(composer_json).first()
+            found_modules = (
+                jq.compile(
+                    '.require | keys | map(select(startswith("drupal/"))) | map(select('
+                    'startswith("drupal/core") | not))'
+                )
+                .input(composer_json)
+                .first()
+            )
             for module in found_modules:
                 self.__modules[module] = Module(module)
 
@@ -420,16 +478,20 @@ class Application:
 
         with open(os.path.join(args.directory, "composer.lock"), "r") as f:
             composer_lock = json.load(f)
-            for module_name in self.__modules.keys():
+            for module_name in self.__modules:
                 module = self.__modules.get(module_name)
                 if module is None:
                     continue
                 # look for the module with name in the packages array
                 module_version = None
                 try:
-                    module_version = jq.compile(
-                        ".packages | map(select(.name == \"{}\")) | .[].version".format(module.name)) \
-                        .input(composer_lock).first()
+                    module_version = (
+                        jq.compile(
+                            f'.packages | map(select(.name == "{module.name}")) | .[].version'
+                        )
+                        .input(composer_lock)
+                        .first()
+                    )
                 except StopIteration:
                     module_version = None
                 # save the module name and version in the versioned_modules array

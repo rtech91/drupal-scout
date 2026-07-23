@@ -4,10 +4,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from drupal_scout.module import Module, AuditStatus, ModuleDeepScan
+from drupal_scout.module import AuditStatus, Module, ModuleDeepScan
 
 
-def resolve_composer_patches(project_dir: str | Path) -> dict[str, list[dict[str, str]]]:
+def resolve_composer_patches(
+    project_dir: str | Path,
+) -> dict[str, list[dict[str, str]]]:
     """
     Resolve applied Composer patches from composer.json and composer.patches.json files.
 
@@ -49,7 +51,10 @@ def resolve_composer_patches(project_dir: str | Path) -> dict[str, list[dict[str
                     _parse_patch_dict(inline_patches)
 
                 custom_patches_file = extra.get("patches-file")
-                if isinstance(custom_patches_file, str) and custom_patches_file not in patches_file_names:
+                if (
+                    isinstance(custom_patches_file, str)
+                    and custom_patches_file not in patches_file_names
+                ):
                     patches_file_names.insert(0, custom_patches_file)
         except Exception:
             pass
@@ -69,10 +74,12 @@ def resolve_composer_patches(project_dir: str | Path) -> dict[str, list[dict[str
     return patches_by_pkg
 
 
-def resolve_module_path(package_name: str, project_dir: str | Path) -> tuple[Path | None, str | None]:
+def resolve_module_path(
+    package_name: str, project_dir: str | Path
+) -> tuple[Path | None, str | None]:
     """
     Resolve the installed directory path for a Composer package.
-    
+
     :param package_name: Composer package name (e.g. 'drupal/webform')
     :param project_dir: Path to the project root
     :return: (resolved_path, failure_reason)
@@ -86,19 +93,35 @@ def resolve_module_path(package_name: str, project_dir: str | Path) -> tuple[Pat
     try:
         data = json.loads(installed_json_path.read_text(encoding="utf-8"))
     except Exception as exc:
-        return None, f"Failed to parse Composer metadata in {installed_json_path}: {exc}"
+        return (
+            None,
+            f"Failed to parse Composer metadata in {installed_json_path}: {exc}",
+        )
 
     packages = data.get("packages", data) if isinstance(data, dict) else data
     if not isinstance(packages, list):
         return None, f"Invalid format in Composer metadata {installed_json_path}"
 
-    pkg_info = next((pkg for pkg in packages if isinstance(pkg, dict) and pkg.get("name") == package_name), None)
+    pkg_info = next(
+        (
+            pkg
+            for pkg in packages
+            if isinstance(pkg, dict) and pkg.get("name") == package_name
+        ),
+        None,
+    )
     if not pkg_info:
-        return None, f"Package {package_name} not found in vendor/composer/installed.json"
+        return (
+            None,
+            f"Package {package_name} not found in vendor/composer/installed.json",
+        )
 
     install_path_raw = pkg_info.get("install-path")
     if not install_path_raw:
-        return None, f"Package {package_name} missing 'install-path' in Composer metadata"
+        return (
+            None,
+            f"Package {package_name} missing 'install-path' in Composer metadata",
+        )
 
     # Composer 2 install-path is relative to vendor/composer/
     vendor_composer_dir = project_path / "vendor" / "composer"
@@ -114,11 +137,11 @@ def perform_deep_scan(
     package_name: str,
     project_dir: str | Path,
     mode: str = "all",
-    patches_map: dict | None = None
+    patches_map: dict | None = None,
 ) -> ModuleDeepScan:
     """
     Perform a read-only local deep scan for a specified module.
-    
+
     :param package_name: Composer package name
     :param project_dir: Project root directory
     :param mode: Deep scan mode ('all', 'patches', or 'git')
@@ -223,7 +246,10 @@ def perform_deep_scan(
             text=True,
             check=False,
         )
-        if shallow_proc.returncode == 0 and shallow_proc.stdout.strip().lower() == "true":
+        if (
+            shallow_proc.returncode == 0
+            and shallow_proc.stdout.strip().lower() == "true"
+        ):
             is_shallow = True
     except Exception:
         pass
@@ -256,7 +282,9 @@ def perform_deep_scan(
             else:
                 if is_shallow:
                     audit.history_status = AuditStatus.INCOMPLETE
-                    audit.history_reason = "Shallow repository clone; commit history is incomplete"
+                    audit.history_reason = (
+                        "Shallow repository clone; commit history is incomplete"
+                    )
                 else:
                     audit.history_status = AuditStatus.CLEAR
     except Exception as exc:
@@ -266,32 +294,51 @@ def perform_deep_scan(
     return audit
 
 
-def audit_module_sync(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleDeepScan:
+def audit_module_sync(
+    module: Module | str,
+    project_dir: str | Path,
+    mode: str = "all",
+    patches_map: dict | None = None,
+) -> ModuleDeepScan:
     module_name = module.name if isinstance(module, Module) else module
-    audit = perform_deep_scan(module_name, project_dir, mode=mode, patches_map=patches_map)
+    audit = perform_deep_scan(
+        module_name, project_dir, mode=mode, patches_map=patches_map
+    )
     if isinstance(module, Module):
         module.deep_scan = audit
     return audit
 
 
-async def audit_module_async(module: Module | str, project_dir: str | Path, mode: str = "all", patches_map: dict | None = None) -> ModuleDeepScan:
+async def audit_module_async(
+    module: Module | str,
+    project_dir: str | Path,
+    mode: str = "all",
+    patches_map: dict | None = None,
+) -> ModuleDeepScan:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, audit_module_sync, module, project_dir, mode, patches_map)
+    return await loop.run_in_executor(
+        None, audit_module_sync, module, project_dir, mode, patches_map
+    )
 
 
-async def audit_modules_async(modules: list[Module], project_dir: str | Path, mode: str = "all") -> None:
+async def audit_modules_async(
+    modules: list[Module], project_dir: str | Path, mode: str = "all"
+) -> None:
     loop = asyncio.get_running_loop()
     mode_normalized = str(mode).lower() if mode else "all"
     if mode_normalized in ("all", "patches"):
-        patches_map = await loop.run_in_executor(None, resolve_composer_patches, project_dir)
+        patches_map = await loop.run_in_executor(
+            None, resolve_composer_patches, project_dir
+        )
     else:
         patches_map = {}
 
     def _audit_one(mod: Module):
-        audit = perform_deep_scan(mod.name, project_dir, mode=mode_normalized, patches_map=patches_map)
+        audit = perform_deep_scan(
+            mod.name, project_dir, mode=mode_normalized, patches_map=patches_map
+        )
         mod.deep_scan = audit
         return audit
 
     tasks = [loop.run_in_executor(None, _audit_one, mod) for mod in modules]
     await asyncio.gather(*tasks)
-

@@ -2,8 +2,8 @@ from argparse import Namespace
 
 from .formatter import Formatter
 from .jsonformatter import JSONFormatter
-from .tableformatter import TableFormatter
 from .suggestformatter import SuggestFormatter
+from .tableformatter import TableFormatter
 
 
 class FormatterFactory:
@@ -21,10 +21,10 @@ class FormatterFactory:
         :rtype:         Formatter
         """
         format_name = args.format
-        if format_name == 'json':
+        if format_name == "json":
             return JSONFormatter()
-        elif format_name == 'table':
+        elif format_name == "table":
             return TableFormatter()
-        elif format_name == 'suggest':
+        elif format_name == "suggest":
             return SuggestFormatter(args)
         return None

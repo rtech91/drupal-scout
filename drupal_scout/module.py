@@ -1,5 +1,5 @@
-from enum import Enum
 from dataclasses import dataclass, field
+from enum import Enum
 
 
 class AuditStatus(str, Enum):
@@ -20,9 +20,6 @@ class ModuleDeepScan:
     tracked_files_count: int = 0
     recent_commits: list[dict[str, str]] = field(default_factory=list)
     patches: list[dict[str, str]] = field(default_factory=list)
-
-
-
 
 
 class Module:

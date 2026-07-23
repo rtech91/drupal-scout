@@ -12,22 +12,18 @@ Each tool maps directly to a CLI command/mode:
   - generate_composer_upgrade_json → drupal-scout --format suggest
 """
 
-import io
 import json
 import os
 import subprocess
-import sys
 from argparse import Namespace
-from typing import Optional, Union
-
 
 from fastmcp import FastMCP
 
 from .application import Application
-from .output import SilentOutputHandler
 from .formatters.jsonformatter import JSONFormatter
 from .formatters.suggestformatter import SuggestFormatter
 from .module import Module
+from .output import SilentOutputHandler
 from .workers_manager import WorkersManager
 
 mcp = FastMCP("drupal-scout")
@@ -75,12 +71,8 @@ async def get_diagnostic_info(directory: str = ".") -> dict:
         result["jq_status"] = "NOT FOUND OR NOT FUNCTIONAL"
 
     # Composer file presence
-    result["composer_json"] = os.path.isfile(
-        os.path.join(directory, "composer.json")
-    )
-    result["composer_lock"] = os.path.isfile(
-        os.path.join(directory, "composer.lock")
-    )
+    result["composer_json"] = os.path.isfile(os.path.join(directory, "composer.json"))
+    result["composer_lock"] = os.path.isfile(os.path.join(directory, "composer.lock"))
 
     # Composer 2 detection
     args_ns = Namespace(directory=directory)
@@ -112,7 +104,7 @@ async def perform_full_project_scan(
     directory: str = ".",
     no_lock: bool = False,
     limit: int = 10,
-    deep_scan: Union[bool, str] = False,
+    deep_scan: bool | str = False,
 ) -> dict:
     """Analyze an entire Drupal project for module upgrade compatibility.
 
@@ -151,7 +143,9 @@ async def perform_full_project_scan(
     # Check Composer 2
     args_ns = Namespace(directory=directory, no_lock=no_lock)
     if not app.is_composer2(args_ns):
-        return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
+        return {
+            "error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."
+        }
 
     # Determine Drupal core version
     try:
@@ -196,8 +190,6 @@ async def perform_full_project_scan(
         mode_str = "all" if deep_scan is True else str(deep_scan)
         await audit_modules_async(list(modules.values()), directory, mode=mode_str)
 
-
-
     # Format output as JSON
     formatter = JSONFormatter()
     modules_json = json.loads(formatter.format(list(modules.values())))
@@ -217,10 +209,10 @@ async def perform_full_project_scan(
 @mcp.tool()
 async def scan_specific_modules(
     modules: list[str],
-    core: Optional[str] = None,
+    core: str | None = None,
     directory: str = ".",
     limit: int = 10,
-    deep_scan: Union[bool, str] = False,
+    deep_scan: bool | str = False,
 ) -> dict:
     """Scan specific Drupal modules for upgrade compatibility.
 
@@ -301,10 +293,9 @@ async def scan_specific_modules(
         from .deep_scan import audit_modules_async
 
         mode_str = "all" if deep_scan is True else str(deep_scan)
-        await audit_modules_async(list(module_objects.values()), directory, mode=mode_str)
-
-
-
+        await audit_modules_async(
+            list(module_objects.values()), directory, mode=mode_str
+        )
 
     # Format output
     formatter = JSONFormatter()
@@ -317,7 +308,6 @@ async def scan_specific_modules(
     }
 
 
-
 # ---------------------------------------------------------------------------
 # Tool 4: generate_composer_upgrade_json
 # ---------------------------------------------------------------------------
@@ -326,7 +316,7 @@ async def scan_specific_modules(
 @mcp.tool()
 async def generate_composer_upgrade_json(
     directory: str = ".",
-    core: Optional[str] = None,
+    core: str | None = None,
 ) -> dict:
     """Generate a suggested composer.json with updated module versions.
 
@@ -362,7 +352,9 @@ async def generate_composer_upgrade_json(
     # Check Composer 2
     args_ns = Namespace(directory=directory, no_lock=False)
     if not app.is_composer2(args_ns):
-        return {"error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."}
+        return {
+            "error": "The Drupal project uses Composer v1. Please upgrade to Composer v2."
+        }
 
     # Determine core version
     if core:
@@ -395,9 +387,7 @@ async def generate_composer_upgrade_json(
     lock_file_used = False
     composer_lock_path = os.path.join(directory, "composer.lock")
     if os.path.isfile(composer_lock_path):
-        app.determine_module_versions(
-            Namespace(directory=directory, no_lock=False)
-        )
+        app.determine_module_versions(Namespace(directory=directory, no_lock=False))
         lock_file_used = True
 
     # Run workers
@@ -428,7 +418,7 @@ async def generate_composer_upgrade_json(
 # ---------------------------------------------------------------------------
 
 
-def _auto_detect_core(app: Application, directory: str) -> Optional[str]:
+def _auto_detect_core(app: Application, directory: str) -> str | None:
     """Attempt to auto-detect the Drupal core version from local project files.
 
     Tries composer.lock first, then falls back to composer.json.
