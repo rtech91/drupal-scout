@@ -1,17 +1,24 @@
 from unittest import TestCase
+
 from drupal_scout.exceptions import (
     ComposerV1Exception,
     DirectoryNotFoundException,
-    NoComposerJSONFileException,
     ModuleNotFoundException,
+    NoComposerJSONFileException,
 )
 
-class TestExceptions(TestCase):
 
+class TestExceptions(TestCase):
     def test_composer_v1_exception_default_message(self):
         exc = ComposerV1Exception()
-        self.assertEqual(exc.message, "The Drupal project uses Composer v1. Please upgrade to Composer v2.")
-        self.assertEqual(str(exc), "The Drupal project uses Composer v1. Please upgrade to Composer v2.")
+        self.assertEqual(
+            exc.message,
+            "The Drupal project uses Composer v1. Please upgrade to Composer v2.",
+        )
+        self.assertEqual(
+            str(exc),
+            "The Drupal project uses Composer v1. Please upgrade to Composer v2.",
+        )
 
     def test_composer_v1_exception_custom_message(self):
         exc = ComposerV1Exception("Custom message")
@@ -25,8 +32,12 @@ class TestExceptions(TestCase):
 
     def test_no_composer_json_file_exception_default_message(self):
         exc = NoComposerJSONFileException()
-        self.assertEqual(exc.message, "The directory does not contain the composer.json file.")
-        self.assertEqual(str(exc), "The directory does not contain the composer.json file.")
+        self.assertEqual(
+            exc.message, "The directory does not contain the composer.json file."
+        )
+        self.assertEqual(
+            str(exc), "The directory does not contain the composer.json file."
+        )
 
     def test_no_composer_json_file_exception_custom_message(self):
         exc = NoComposerJSONFileException("Missing file")
@@ -37,4 +48,3 @@ class TestExceptions(TestCase):
         exc = ModuleNotFoundException("Module X not found")
         self.assertEqual(exc.message, "Module X not found")
         self.assertEqual(str(exc), "Module X not found")
-

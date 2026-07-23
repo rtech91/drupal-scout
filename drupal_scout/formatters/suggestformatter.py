@@ -3,9 +3,12 @@
 import json
 import os
 from argparse import Namespace
-from .formatter import Formatter
+
 from packaging import version
+
 from drupal_scout.module import Module
+
+from .formatter import Formatter
 
 
 class SuggestFormatter(Formatter):
@@ -25,7 +28,6 @@ class SuggestFormatter(Formatter):
         :return:          the formatted output
         :rtype:           str
         """
-        output: list[str] = []
         with open(os.path.join(self.directory, "composer.json"), "r") as f:
             composer_json = json.load(f)
             for module in modules:
@@ -33,15 +35,17 @@ class SuggestFormatter(Formatter):
                 if len(module.suitable_entries) > 1 and module.active is True:
                     lowest_version = self.find_lowest_version(module.suitable_entries)
                     # find the module in the composer.json
-                    for package in composer_json['require']:
+                    for package in composer_json["require"]:
                         if package == module.name:
                             # replace the version with the lowest version
-                            composer_json['require'][package] = f"^{lowest_version}"
+                            composer_json["require"][package] = f"^{lowest_version}"
                 # module have only one suitable entry, replace the requirement version with the suitable entry version
                 elif len(module.suitable_entries) == 1:
-                    for package in composer_json['require']:
+                    for package in composer_json["require"]:
                         if package == module.name:
-                            composer_json['require'][package] = f"^{module.suitable_entries[0]['version']}"
+                            composer_json["require"][package] = (
+                                f"^{module.suitable_entries[0]['version']}"
+                            )
                 elif len(module.suitable_entries) == 0:
                     continue
         if self.save_dump:
@@ -59,8 +63,8 @@ class SuggestFormatter(Formatter):
         """
         lowest_version = None
         for entry in suitable_entries:
-            if lowest_version is None:
-                lowest_version = entry['version']
-            elif version.parse(lowest_version) > version.parse(entry['version']):
-                lowest_version = entry['version']
+            if lowest_version is None or version.parse(lowest_version) > version.parse(
+                entry["version"]
+            ):
+                lowest_version = entry["version"]
         return lowest_version

@@ -1,18 +1,19 @@
 import argparse
-import tempfile
 import json
+import subprocess
+import tempfile
+from importlib.metadata import PackageNotFoundError
 from io import StringIO
 from os import mkdir
 from os.path import join
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch, MagicMock, AsyncMock
-from importlib.metadata import PackageNotFoundError
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from drupal_scout.application import Application
-from drupal_scout.module import Module
+from drupal_scout.module import AuditStatus, Module
 
 
 class TestApplication(TestCase):
@@ -23,9 +24,9 @@ class TestApplication(TestCase):
         """
         app = Application()
         temp_dir = tempfile.TemporaryDirectory()
-        mkdir(temp_dir.name + '/vendor')
-        mkdir(temp_dir.name + '/vendor/composer')
-        Path(temp_dir.name + '/vendor/composer/platform_check.php').touch()
+        mkdir(temp_dir.name + "/vendor")
+        mkdir(temp_dir.name + "/vendor/composer")
+        Path(temp_dir.name + "/vendor/composer/platform_check.php").touch()
         args = argparse.Namespace(directory=temp_dir.name)
         self.assertTrue(app.is_composer2(args))
         temp_dir.cleanup()
@@ -38,34 +39,34 @@ class TestApplication(TestCase):
         """
         app = Application()
         temp_dir = tempfile.TemporaryDirectory()
-        Path(temp_dir.name + '/composer.json').touch()
+        Path(temp_dir.name + "/composer.json").touch()
         # write to the file to test the reading
-        with open(temp_dir.name + '/composer.json', 'w') as f:
+        with open(temp_dir.name + "/composer.json", "w") as f:
             f.write('{"require": {"drupal/core": "^8.8.5"}}')
         args = argparse.Namespace(directory=temp_dir.name, no_lock=True)
         app.determine_drupal_core_version(args)
         # ^8.8.5 gets stripped to 8.8.5
-        self.assertEqual(app.drupal_core_version, '8.8.5')
-        
+        self.assertEqual(app.drupal_core_version, "8.8.5")
+
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
-        Path(temp_dir.name + '/composer.lock').touch()
+        Path(temp_dir.name + "/composer.lock").touch()
         # write to the file to test the reading
-        with open(temp_dir.name + '/composer.lock', 'w') as f:
+        with open(temp_dir.name + "/composer.lock", "w") as f:
             f.write('{"packages": [{"name": "drupal/core", "version": "8.8.7"}]}')
         app.determine_drupal_core_version(args)
-        self.assertEqual(app.drupal_core_version, '8.8.7')
+        self.assertEqual(app.drupal_core_version, "8.8.7")
         temp_dir.cleanup()
 
     def test_get_argparser_configuration(self):
         app = Application()
         parser = argparse.ArgumentParser()
         parser = app.get_argparser_configuration(parser)
-        
-        args = parser.parse_args(['-d', '/tmp', '-n', '-l', '4', '-f', 'json'])
-        self.assertEqual(args.directory, '/tmp')
+
+        args = parser.parse_args(["-d", "/tmp", "-n", "-l", "4", "-f", "json"])
+        self.assertEqual(args.directory, "/tmp")
         self.assertTrue(args.no_lock)
         self.assertEqual(args.limit, 4)
-        self.assertEqual(args.format, 'json')
+        self.assertEqual(args.format, "json")
         self.assertFalse(args.save_dump)
 
     def test_get_argparser_default_limit(self):
@@ -79,23 +80,23 @@ class TestApplication(TestCase):
     def test_get_required_modules(self):
         app = Application()
         temp_dir = tempfile.TemporaryDirectory()
-        Path(temp_dir.name + '/composer.json').touch()
-        
+        Path(temp_dir.name + "/composer.json").touch()
+
         # Test composer.json parsing using jq logic for getting required modules
         composer_data = {
             "require": {
                 "drupal/core": "^9",
                 "drupal/webform": "^6.0",
                 "drupal/token": "^1.0",
-                "symfony/yaml": "^4"
+                "symfony/yaml": "^4",
             }
         }
-        with open(temp_dir.name + '/composer.json', 'w') as f:
+        with open(temp_dir.name + "/composer.json", "w") as f:
             json.dump(composer_data, f)
-            
+
         args = argparse.Namespace(directory=temp_dir.name)
         app.get_required_modules(args)
-        
+
         # Verify that only drupal/* (excluding core) are added
         modules = app.modules
         self.assertIn("drupal/webform", modules)
@@ -109,23 +110,23 @@ class TestApplication(TestCase):
         # Pretend we already loaded modules
         app.modules = {
             "drupal/token": Module("drupal/token"),
-            "drupal/webform": Module("drupal/webform")
+            "drupal/webform": Module("drupal/webform"),
         }
-        
+
         temp_dir = tempfile.TemporaryDirectory()
-        Path(temp_dir.name + '/composer.lock').touch()
+        Path(temp_dir.name + "/composer.lock").touch()
         lock_data = {
             "packages": [
                 {"name": "drupal/token", "version": "1.5.0"},
-                {"name": "drupal/webform", "version": "6.1.2"}
+                {"name": "drupal/webform", "version": "6.1.2"},
             ]
         }
-        with open(temp_dir.name + '/composer.lock', 'w') as f:
+        with open(temp_dir.name + "/composer.lock", "w") as f:
             json.dump(lock_data, f)
 
         args = argparse.Namespace(directory=temp_dir.name, no_lock=False)
         app.determine_module_versions(args)
-        
+
         modules = app.modules
         self.assertEqual(modules["drupal/token"].version, "1.5.0")
         self.assertEqual(modules["drupal/webform"].version, "6.1.2")
@@ -136,27 +137,31 @@ class TestApplication(TestCase):
 async def test_run_success_flow():
     app = Application()
     temp_dir = tempfile.TemporaryDirectory()
-    
+
     # Setup valid composer.json and Composer 2 structure
-    mkdir(temp_dir.name + '/vendor')
-    mkdir(temp_dir.name + '/vendor/composer')
-    Path(temp_dir.name + '/vendor/composer/platform_check.php').touch()
-    
-    composer_data = {"require": {"drupal/core-recommended": "9.5.0", "drupal/test": "1.0"}}
-    with open(temp_dir.name + '/composer.json', 'w') as f:
+    mkdir(temp_dir.name + "/vendor")
+    mkdir(temp_dir.name + "/vendor/composer")
+    Path(temp_dir.name + "/vendor/composer/platform_check.php").touch()
+
+    composer_data = {
+        "require": {"drupal/core-recommended": "9.5.0", "drupal/test": "1.0"}
+    }
+    with open(temp_dir.name + "/composer.json", "w") as f:
         json.dump(composer_data, f)
-        
-    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+
+    with (
+        patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+        patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+    ):
         MockWorkersManager.return_value.run = AsyncMock()
         # Mock sys.argv to emulate CLI run
-        with patch('sys.argv', ['drupal-scout', '-d', temp_dir.name, '-n']):
+        with patch("sys.argv", ["drupal-scout", "-d", temp_dir.name, "-n"]):
             await app.run()
-            
+
         # Ensure WorkersManager was initialized and run
         MockWorkersManager.assert_called_once()
         MockWorkersManager.return_value.run.assert_called_once()
-        
+
         # Ensure Formatting happened
         MockFormatterFactory.get_formatter.assert_called_once()
     temp_dir.cleanup()
@@ -168,23 +173,24 @@ def test_handle_info():
     """
     app = Application()
     temp_dir = tempfile.TemporaryDirectory()
-    
+
     # Create dummy composer.json
-    with open(join(temp_dir.name, 'composer.json'), 'w') as f:
+    with open(join(temp_dir.name, "composer.json"), "w") as f:
         json.dump({"require": {"drupal/core": "9.5.0"}}, f)
-        
-    args = argparse.Namespace(directory=temp_dir.name, command='info')
-    
+
+    args = argparse.Namespace(directory=temp_dir.name, command="info")
+
     # Mocking system dependencies
-    with patch('importlib.metadata.version') as mock_version, \
-         patch('subprocess.run') as mock_run, \
-         patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-        
+    with (
+        patch("importlib.metadata.version") as mock_version,
+        patch("subprocess.run") as mock_run,
+        patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+    ):
         mock_version.return_value = "1.1.0"
-        mock_run.return_value = MagicMock() # success for jq check
-        
+        mock_run.return_value = MagicMock()  # success for jq check
+
         app.handle_info(args)
-        
+
         output = mock_stdout.getvalue()
         assert "Drupal Scout v1.1.0" in output
         assert "1.1.0 (verified from metadata)" in output
@@ -205,8 +211,8 @@ async def test_run_calls_handle_info():
     """
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
-        with patch.object(app, 'handle_info') as mock_handle_info:
-            with patch('sys.argv', ['drupal-scout', '-d', temp_dir, 'info']):
+        with patch.object(app, "handle_info") as mock_handle_info:
+            with patch("sys.argv", ["drupal-scout", "-d", temp_dir, "info"]):
                 await app.run()
                 mock_handle_info.assert_called_once()
 
@@ -217,19 +223,21 @@ def test_handle_info_fallback_version():
     """
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
-        args = argparse.Namespace(directory=temp_dir, command='info')
-        
-        with patch('importlib.metadata.version', side_effect=PackageNotFoundError), \
-             patch('subprocess.run') as mock_run, \
-             patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            
+        args = argparse.Namespace(directory=temp_dir, command="info")
+
+        with (
+            patch("importlib.metadata.version", side_effect=PackageNotFoundError),
+            patch("subprocess.run"),
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
             original_open = open
+
             def side_effect(path, *args, **kwargs):
-                if 'pyproject.toml' in str(path):
+                if "pyproject.toml" in str(path):
                     return StringIO('version = "1.2.3-fallback"')
                 return original_open(path, *args, **kwargs)
-            
-            with patch('builtins.open', side_effect=side_effect):
+
+            with patch("builtins.open", side_effect=side_effect):
                 app.handle_info(args)
                 output = mock_stdout.getvalue()
                 assert "Drupal Scout v1.2.3-fallback" in output
@@ -241,11 +249,12 @@ def test_handle_info_jq_missing():
     """
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
-        args = argparse.Namespace(directory=temp_dir, command='info')
-        with patch('importlib.metadata.version', return_value="1.1.0"), \
-             patch('subprocess.run', side_effect=FileNotFoundError), \
-             patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            
+        args = argparse.Namespace(directory=temp_dir, command="info")
+        with (
+            patch("importlib.metadata.version", return_value="1.1.0"),
+            patch("subprocess.run", side_effect=FileNotFoundError),
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
             app.handle_info(args)
             output = mock_stdout.getvalue()
             assert "Dependencies (jq)" in output
@@ -258,8 +267,8 @@ async def test_run_directory_not_found():
     Test app.run() raises DirectoryNotFoundException and exits for non-existent directory.
     """
     app = Application()
-    with patch('sys.argv', ['drupal-scout', '-d', '/non/existent/path/for/test']):
-        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+    with patch("sys.argv", ["drupal-scout", "-d", "/non/existent/path/for/test"]):
+        with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
             with pytest.raises(SystemExit) as exc_info:
                 await app.run()
             assert exc_info.value.code == 1
@@ -274,8 +283,8 @@ async def test_run_no_composer_json():
     """
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
-        with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+        with patch("sys.argv", ["drupal-scout", "-d", temp_dir]):
+            with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1
@@ -290,9 +299,11 @@ async def test_run_version():
     """
     app = Application()
     # Mocking get_version to return a predictable string
-    with patch('drupal_scout.application.Application.get_version', return_value="1.1.0"):
-        with patch('sys.argv', ['drupal-scout', '--version']):
-            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+    with patch(
+        "drupal_scout.application.Application.get_version", return_value="1.1.0"
+    ):
+        with patch("sys.argv", ["drupal-scout", "--version"]):
+            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                 # argparse version action usually prints to stdout and exits with 0
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
@@ -310,11 +321,11 @@ async def test_run_composer_v1_exits():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create composer.json but NO vendor/composer/platform_check.php (Composer v1)
-        with open(join(temp_dir, 'composer.json'), 'w') as f:
+        with open(join(temp_dir, "composer.json"), "w") as f:
             json.dump({"require": {"drupal/core": "^9"}}, f)
 
-        with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+        with patch("sys.argv", ["drupal-scout", "-d", temp_dir]):
+            with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1
@@ -331,27 +342,31 @@ async def test_run_with_lock_file():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         # Setup Composer 2 structure
-        mkdir(join(temp_dir, 'vendor'))
-        mkdir(join(temp_dir, 'vendor', 'composer'))
-        Path(join(temp_dir, 'vendor', 'composer', 'platform_check.php')).touch()
+        mkdir(join(temp_dir, "vendor"))
+        mkdir(join(temp_dir, "vendor", "composer"))
+        Path(join(temp_dir, "vendor", "composer", "platform_check.php")).touch()
 
-        composer_data = {"require": {"drupal/core-recommended": "^10.0", "drupal/token": "^1.0"}}
-        with open(join(temp_dir, 'composer.json'), 'w') as f:
+        composer_data = {
+            "require": {"drupal/core-recommended": "^10.0", "drupal/token": "^1.0"}
+        }
+        with open(join(temp_dir, "composer.json"), "w") as f:
             json.dump(composer_data, f)
 
         lock_data = {
             "packages": [
                 {"name": "drupal/core", "version": "10.2.0"},
-                {"name": "drupal/token", "version": "1.5.0"}
+                {"name": "drupal/token", "version": "1.5.0"},
             ]
         }
-        with open(join(temp_dir, 'composer.lock'), 'w') as f:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
             json.dump(lock_data, f)
 
-        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        with (
+            patch("drupal_scout.application.FormatterFactory"),
+            patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+        ):
             MockWorkersManager.return_value.run = AsyncMock()
-            with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
+            with patch("sys.argv", ["drupal-scout", "-d", temp_dir]):
                 await app.run()
 
             MockWorkersManager.assert_called_once()
@@ -369,21 +384,21 @@ async def test_run_no_modules_found():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         # Setup Composer 2 structure
-        mkdir(join(temp_dir, 'vendor'))
-        mkdir(join(temp_dir, 'vendor', 'composer'))
-        Path(join(temp_dir, 'vendor', 'composer', 'platform_check.php')).touch()
+        mkdir(join(temp_dir, "vendor"))
+        mkdir(join(temp_dir, "vendor", "composer"))
+        Path(join(temp_dir, "vendor", "composer", "platform_check.php")).touch()
 
         # composer.json with only core — no drupal/* modules
         composer_data = {"require": {"drupal/core": "^10.0"}}
-        with open(join(temp_dir, 'composer.json'), 'w') as f:
+        with open(join(temp_dir, "composer.json"), "w") as f:
             json.dump(composer_data, f)
 
         lock_data = {"packages": [{"name": "drupal/core", "version": "10.2.0"}]}
-        with open(join(temp_dir, 'composer.lock'), 'w') as f:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
             json.dump(lock_data, f)
 
-        with patch('sys.argv', ['drupal-scout', '-d', temp_dir]):
-            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+        with patch("sys.argv", ["drupal-scout", "-d", temp_dir]):
+            with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
                 await app.run()
                 output = mock_stderr.getvalue()
                 assert "No modules were found" in output
@@ -395,8 +410,10 @@ def test_get_version_returns_unknown_on_all_failures():
     Covers lines 171-173.
     """
     app = Application()
-    with patch('importlib.metadata.version', side_effect=PackageNotFoundError), \
-         patch('builtins.open', side_effect=FileNotFoundError):
+    with (
+        patch("importlib.metadata.version", side_effect=PackageNotFoundError),
+        patch("builtins.open", side_effect=FileNotFoundError),
+    ):
         result = app.get_version()
         assert result == "Unknown"
 
@@ -409,16 +426,18 @@ def test_handle_info_with_lock_detected():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create both files
-        with open(join(temp_dir, 'composer.json'), 'w') as f:
+        with open(join(temp_dir, "composer.json"), "w") as f:
             json.dump({"require": {"drupal/core": "^10.0"}}, f)
-        with open(join(temp_dir, 'composer.lock'), 'w') as f:
+        with open(join(temp_dir, "composer.lock"), "w") as f:
             json.dump({"packages": [{"name": "drupal/core", "version": "10.2.0"}]}, f)
 
-        args = argparse.Namespace(directory=temp_dir, command='info')
+        args = argparse.Namespace(directory=temp_dir, command="info")
 
-        with patch('importlib.metadata.version', return_value="1.2.0"), \
-             patch('subprocess.run') as mock_run, \
-             patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+        with (
+            patch("importlib.metadata.version", return_value="1.2.0"),
+            patch("subprocess.run") as mock_run,
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
             mock_run.return_value = MagicMock()
             app.handle_info(args)
             output = mock_stdout.getvalue()
@@ -436,14 +455,16 @@ def test_handle_info_core_version_detection_failure():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create composer.json with bad content that will fail parsing (invalid JSON)
-        with open(join(temp_dir, 'composer.json'), 'w') as f:
+        with open(join(temp_dir, "composer.json"), "w") as f:
             f.write('{"require": invalid')
 
-        args = argparse.Namespace(directory=temp_dir, command='info')
+        args = argparse.Namespace(directory=temp_dir, command="info")
 
-        with patch('importlib.metadata.version', return_value="1.2.0"), \
-             patch('subprocess.run') as mock_run, \
-             patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+        with (
+            patch("importlib.metadata.version", return_value="1.2.0"),
+            patch("subprocess.run") as mock_run,
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
             mock_run.return_value = MagicMock()
             app.handle_info(args)
             output = mock_stdout.getvalue()
@@ -463,12 +484,13 @@ def test_determine_module_versions_with_empty_modules():
 
     with tempfile.TemporaryDirectory() as temp_dir:
         args = argparse.Namespace(directory=temp_dir)
-        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+        with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
             with pytest.raises(SystemExit) as exc_info:
                 app.determine_module_versions(args)
             assert exc_info.value.code == 0
             output = mock_stderr.getvalue()
             assert "No modules to check" in output
+
 
 class TestArgparserModulesArgument(TestCase):
     """Verify the CLI accepts optional --modules and --core arguments."""
@@ -477,23 +499,25 @@ class TestArgparserModulesArgument(TestCase):
         app = Application()
         parser = argparse.ArgumentParser()
         parser = app.get_argparser_configuration(parser)
-        args = parser.parse_args(['--core', '10.0.0', '--modules', 'drupal/paragraphs'])
-        self.assertEqual(args.modules, ['drupal/paragraphs'])
-        self.assertEqual(args.core, '10.0.0')
+        args = parser.parse_args(["--core", "10.0.0", "--modules", "drupal/paragraphs"])
+        self.assertEqual(args.modules, ["drupal/paragraphs"])
+        self.assertEqual(args.core, "10.0.0")
 
     def test_modules_arg_multiple(self):
         app = Application()
         parser = argparse.ArgumentParser()
         parser = app.get_argparser_configuration(parser)
-        args = parser.parse_args(['--core', '10.0.0', '--modules', 'drupal/webform', 'drupal/ctools'])
-        self.assertEqual(args.modules, ['drupal/webform', 'drupal/ctools'])
+        args = parser.parse_args(
+            ["--core", "10.0.0", "--modules", "drupal/webform", "drupal/ctools"]
+        )
+        self.assertEqual(args.modules, ["drupal/webform", "drupal/ctools"])
 
     def test_no_modules_arg(self):
         """When no positional modules are given, the list should be empty."""
         app = Application()
         parser = argparse.ArgumentParser()
         parser = app.get_argparser_configuration(parser)
-        args = parser.parse_args(['-d', '/tmp', '-n'])
+        args = parser.parse_args(["-d", "/tmp", "-n"])
         self.assertEqual(args.modules, [])
 
     def test_core_arg_default(self):
@@ -509,17 +533,24 @@ class TestArgparserModulesArgument(TestCase):
 async def test_run_single_module_targeted_scan():
     """Passing one module via CLI triggers a targeted scan."""
     app = Application()
-    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+    with (
+        patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+        patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+    ):
         MockWorkersManager.return_value.run = AsyncMock()
-        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/paragraphs']):
+        with patch(
+            "sys.argv",
+            ["drupal-scout", "--core", "10.0.0", "--modules", "drupal/paragraphs"],
+        ):
             await app.run()
 
         MockWorkersManager.assert_called_once()
         call_kwargs = MockWorkersManager.call_args
-        modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+        modules_arg = call_kwargs.kwargs.get(
+            "modules", call_kwargs[0][0] if call_kwargs[0] else []
+        )
         assert len(modules_arg) == 1
-        assert modules_arg[0].name == 'drupal/paragraphs'
+        assert modules_arg[0].name == "drupal/paragraphs"
         MockFormatterFactory.get_formatter.assert_called_once()
 
 
@@ -527,18 +558,32 @@ async def test_run_single_module_targeted_scan():
 async def test_run_multiple_modules_targeted_scan():
     """Passing multiple modules triggers concurrent processing of all specified modules."""
     app = Application()
-    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+    with (
+        patch("drupal_scout.application.FormatterFactory"),
+        patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+    ):
         MockWorkersManager.return_value.run = AsyncMock()
-        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/webform', 'drupal/ctools']):
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "--core",
+                "10.0.0",
+                "--modules",
+                "drupal/webform",
+                "drupal/ctools",
+            ],
+        ):
             await app.run()
 
         MockWorkersManager.assert_called_once()
         call_kwargs = MockWorkersManager.call_args
-        modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
+        modules_arg = call_kwargs.kwargs.get(
+            "modules", call_kwargs[0][0] if call_kwargs[0] else []
+        )
         assert len(modules_arg) == 2
         names = {m.name for m in modules_arg}
-        assert names == {'drupal/webform', 'drupal/ctools'}
+        assert names == {"drupal/webform", "drupal/ctools"}
 
 
 @pytest.mark.asyncio
@@ -547,24 +592,34 @@ async def test_run_targeted_scan_requires_core_version():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         with open(join(temp_dir, "composer.lock"), "w") as f:
-            json.dump({
-                "packages": [
-                    {"name": "drupal/core", "version": "10.1.0"},
-                    {"name": "drupal/webform", "version": "6.2.0"}
-                ]
-            }, f)
+            json.dump(
+                {
+                    "packages": [
+                        {"name": "drupal/core", "version": "10.1.0"},
+                        {"name": "drupal/webform", "version": "6.2.0"},
+                    ]
+                },
+                f,
+            )
 
-        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        with (
+            patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+            patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+        ):
             MockWorkersManager.return_value.run = AsyncMock()
-            with patch('sys.argv', ['drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform']):
+            with patch(
+                "sys.argv",
+                ["drupal-scout", "-d", temp_dir, "--modules", "drupal/webform"],
+            ):
                 await app.run()
 
             call_kwargs = MockWorkersManager.call_args
-            assert call_kwargs.kwargs.get('current_core') == '10.1.0'
-            assert call_kwargs.kwargs.get('use_lock_version') is True
-            modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
-            assert modules_arg[0].version == '6.2.0'
+            assert call_kwargs.kwargs.get("current_core") == "10.1.0"
+            assert call_kwargs.kwargs.get("use_lock_version") is True
+            modules_arg = call_kwargs.kwargs.get(
+                "modules", call_kwargs[0][0] if call_kwargs[0] else []
+            )
+            assert modules_arg[0].version == "6.2.0"
             MockFormatterFactory.get_formatter.assert_called_once()
 
 
@@ -572,13 +627,22 @@ async def test_run_targeted_scan_requires_core_version():
 async def test_run_targeted_scan_skips_composer_parsing():
     """Targeted scan should not parse project required modules or check Composer 2."""
     app = Application()
-    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+    with (
+        patch("drupal_scout.application.FormatterFactory"),
+        patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+    ):
         MockWorkersManager.return_value.run = AsyncMock()
-        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '--modules', 'drupal/webform']):
-            with patch.object(app, 'get_required_modules') as mock_get_modules, \
-                 patch.object(app, 'determine_module_versions') as mock_determine_versions, \
-                 patch.object(app, 'is_composer2') as mock_is_composer2:
+        with patch(
+            "sys.argv",
+            ["drupal-scout", "--core", "10.0.0", "--modules", "drupal/webform"],
+        ):
+            with (
+                patch.object(app, "get_required_modules") as mock_get_modules,
+                patch.object(
+                    app, "determine_module_versions"
+                ) as mock_determine_versions,
+                patch.object(app, "is_composer2") as mock_is_composer2,
+            ):
                 await app.run()
                 mock_get_modules.assert_not_called()
                 mock_is_composer2.assert_not_called()
@@ -589,13 +653,26 @@ async def test_run_targeted_scan_skips_composer_parsing():
 async def test_run_targeted_scan_with_format_json():
     """Targeted scan respects --format flag."""
     app = Application()
-    with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-         patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+    with (
+        patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+        patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+    ):
         MockWorkersManager.return_value.run = AsyncMock()
-        with patch('sys.argv', ['drupal-scout', '--core', '10.0.0', '-f', 'json', '--modules', 'drupal/webform']):
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "--core",
+                "10.0.0",
+                "-f",
+                "json",
+                "--modules",
+                "drupal/webform",
+            ],
+        ):
             await app.run()
         call_args = MockFormatterFactory.get_formatter.call_args[0][0]
-        assert call_args.format == 'json'
+        assert call_args.format == "json"
 
 
 @pytest.mark.asyncio
@@ -604,24 +681,38 @@ async def test_run_targeted_scan_core_override_wins_over_auto_detection():
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         with open(join(temp_dir, "composer.lock"), "w") as f:
-            json.dump({
-                "packages": [
-                    {"name": "drupal/core", "version": "9.5.0"},
-                    {"name": "drupal/webform", "version": "6.2.0"}
-                ]
-            }, f)
+            json.dump(
+                {
+                    "packages": [
+                        {"name": "drupal/core", "version": "9.5.0"},
+                        {"name": "drupal/webform", "version": "6.2.0"},
+                    ]
+                },
+                f,
+            )
 
-        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        with (
+            patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+            patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+        ):
             MockWorkersManager.return_value.run = AsyncMock()
-            with patch('sys.argv', [
-                'drupal-scout', '-d', temp_dir, '--core', '10.0.0', '--modules', 'drupal/webform'
-            ]):
+            with patch(
+                "sys.argv",
+                [
+                    "drupal-scout",
+                    "-d",
+                    temp_dir,
+                    "--core",
+                    "10.0.0",
+                    "--modules",
+                    "drupal/webform",
+                ],
+            ):
                 await app.run()
 
             call_kwargs = MockWorkersManager.call_args
-            assert call_kwargs.kwargs.get('current_core') == '10.0.0'
-            assert call_kwargs.kwargs.get('use_lock_version') is True
+            assert call_kwargs.kwargs.get("current_core") == "10.0.0"
+            assert call_kwargs.kwargs.get("use_lock_version") is True
             MockFormatterFactory.get_formatter.assert_called_once()
 
 
@@ -631,26 +722,34 @@ async def test_run_targeted_scan_without_local_module_version_keeps_upstream_onl
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
         with open(join(temp_dir, "composer.lock"), "w") as f:
-            json.dump({
-                "packages": [
-                    {"name": "drupal/core", "version": "10.1.0"},
-                    {"name": "drupal/token", "version": "1.5.0"}
-                ]
-            }, f)
+            json.dump(
+                {
+                    "packages": [
+                        {"name": "drupal/core", "version": "10.1.0"},
+                        {"name": "drupal/token", "version": "1.5.0"},
+                    ]
+                },
+                f,
+            )
 
-        with patch('drupal_scout.application.FormatterFactory') as MockFormatterFactory, \
-             patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        with (
+            patch("drupal_scout.application.FormatterFactory") as MockFormatterFactory,
+            patch("drupal_scout.application.WorkersManager") as MockWorkersManager,
+        ):
             MockWorkersManager.return_value.run = AsyncMock()
-            with patch('sys.argv', [
-                'drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform'
-            ]):
+            with patch(
+                "sys.argv",
+                ["drupal-scout", "-d", temp_dir, "--modules", "drupal/webform"],
+            ):
                 await app.run()
 
             call_kwargs = MockWorkersManager.call_args
-            modules_arg = call_kwargs.kwargs.get('modules', call_kwargs[0][0] if call_kwargs[0] else [])
-            assert modules_arg[0].name == 'drupal/webform'
+            modules_arg = call_kwargs.kwargs.get(
+                "modules", call_kwargs[0][0] if call_kwargs[0] else []
+            )
+            assert modules_arg[0].name == "drupal/webform"
             assert modules_arg[0].version is None
-            assert call_kwargs.kwargs.get('use_lock_version') is True
+            assert call_kwargs.kwargs.get("use_lock_version") is True
             MockFormatterFactory.get_formatter.assert_called_once()
 
 
@@ -659,10 +758,273 @@ async def test_run_targeted_scan_exits_when_core_cannot_be_detected():
     """When --core is missing and no local composer metadata exists, targeted scan must fail."""
     app = Application()
     with tempfile.TemporaryDirectory() as temp_dir:
-        with patch('sys.argv', ['drupal-scout', '-d', temp_dir, '--modules', 'drupal/webform']):
-            with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+        with patch(
+            "sys.argv", ["drupal-scout", "-d", temp_dir, "--modules", "drupal/webform"]
+        ):
+            with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
                 with pytest.raises(SystemExit) as exc_info:
                     await app.run()
                 assert exc_info.value.code == 1
                 output = mock_stderr.getvalue()
                 assert "Unable to determine Drupal core version" in output
+
+
+@pytest.mark.asyncio
+async def test_deep_scan_orchestration(make_composer_project, make_git_repo):
+    """Test targeted scan orchestration with --git-audit for single and multiple modules."""
+    project_dir = make_composer_project(
+        packages_map={
+            "drupal/webform": "../../web/modules/contrib/webform",
+            "drupal/token": "../../web/modules/contrib/token",
+        }
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        '{"require": {"drupal/core": "^10.0.0"}}'
+    )
+    (project_dir / "composer.lock").write_text(
+        '{"packages": [{"name": "drupal/core", "version": "10.0.0"}]}'
+    )
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+
+    mod2 = project_dir / "web" / "modules" / "contrib" / "token"
+    mod2.mkdir(parents=True, exist_ok=True)
+    (mod2 / "token.module").write_text("<?php\n")
+
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"], cwd=project_dir, check=True
+    )
+
+    app = Application()
+    with patch("drupal_scout.application.WorkersManager") as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "-d",
+                str(project_dir),
+                "-m",
+                "drupal/webform",
+                "drupal/token",
+                "--deep-scan",
+            ],
+        ):
+            await app.run()
+
+        assert len(app.modules) == 2
+        assert app.modules["drupal/webform"].deep_scan is not None
+        assert app.modules["drupal/webform"].deep_scan.index_status == "found"
+        assert app.modules["drupal/token"].deep_scan is not None
+        assert app.modules["drupal/token"].deep_scan.index_status == "found"
+
+
+@pytest.mark.asyncio
+async def test_global_deep_scan_orchestration(make_composer_project, make_git_repo):
+    """Test global scan orchestration with --deep-scan (no -m flag)."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}},
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        json.dumps(
+            {
+                "require": {"drupal/core": "^10.0.0", "drupal/webform": "^6.0"},
+                "extra": {
+                    "patches": {
+                        "drupal/webform": {"Fix webform": "patches/webform.patch"}
+                    }
+                },
+            }
+        )
+    )
+    (project_dir / "composer.lock").write_text(
+        json.dumps(
+            {
+                "packages": [
+                    {"name": "drupal/core", "version": "10.0.0"},
+                    {"name": "drupal/webform", "version": "6.0.0"},
+                ]
+            }
+        )
+    )
+    vendor_c = project_dir / "vendor" / "composer"
+    vendor_c.mkdir(parents=True, exist_ok=True)
+    (vendor_c / "platform_check.php").touch()
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch("drupal_scout.application.WorkersManager") as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch("sys.argv", ["drupal-scout", "-d", str(project_dir), "--deep-scan"]):
+            await app.run()
+
+        assert "drupal/webform" in app.modules
+        audit = app.modules["drupal/webform"].deep_scan
+        assert audit is not None
+        assert audit.index_status == "found"
+        assert len(audit.patches) == 1
+        assert audit.patches[0]["description"] == "Fix webform"
+
+
+@pytest.mark.asyncio
+async def test_deep_scan_continuation_on_partial_failure(
+    make_composer_project, make_git_repo
+):
+    """Test that failure to resolve one module does not halt auditing of other modules."""
+    project_dir = make_composer_project(
+        packages_map={
+            "drupal/webform": "../../web/modules/contrib/webform",
+            # drupal/token is in packages_map but its folder will not be created
+            "drupal/token": "../../web/modules/contrib/token",
+        }
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        '{"require": {"drupal/core": "^10.0.0"}}'
+    )
+    (project_dir / "composer.lock").write_text(
+        '{"packages": [{"name": "drupal/core", "version": "10.0.0"}]}'
+    )
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch("drupal_scout.application.WorkersManager") as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "-d",
+                str(project_dir),
+                "-m",
+                "drupal/webform",
+                "drupal/token",
+                "--deep-scan",
+            ],
+        ):
+            await app.run()
+
+        assert app.modules["drupal/webform"].deep_scan.index_status == "found"
+        assert app.modules["drupal/token"].deep_scan.index_status == "unavailable"
+        assert "does not exist" in app.modules["drupal/token"].deep_scan.index_reason
+
+
+@pytest.mark.asyncio
+async def test_deep_scan_mode_patches_orchestration(
+    make_composer_project, make_git_repo
+):
+    """Test targeted scan with --deep-scan=patches only resolves patches, not git."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}},
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        json.dumps(
+            {
+                "require": {"drupal/core": "^10.0.0"},
+                "extra": {
+                    "patches": {
+                        "drupal/webform": {"Fix webform": "patches/webform.patch"}
+                    }
+                },
+            }
+        )
+    )
+    (project_dir / "composer.lock").write_text(
+        json.dumps({"packages": [{"name": "drupal/core", "version": "10.0.0"}]})
+    )
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+
+    app = Application()
+    with patch("drupal_scout.application.WorkersManager") as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "-d",
+                str(project_dir),
+                "-m",
+                "drupal/webform",
+                "--deep-scan=patches",
+            ],
+        ):
+            await app.run()
+
+        audit = app.modules["drupal/webform"].deep_scan
+        assert audit is not None
+        assert audit.mode == "patches"
+        assert len(audit.patches) == 1
+        assert audit.index_status == AuditStatus.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_deep_scan_mode_git_orchestration(make_composer_project, make_git_repo):
+    """Test targeted scan with --deep-scan=git only checks git, not patches."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}},
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        json.dumps(
+            {
+                "require": {"drupal/core": "^10.0.0"},
+                "extra": {
+                    "patches": {
+                        "drupal/webform": {"Fix webform": "patches/webform.patch"}
+                    }
+                },
+            }
+        )
+    )
+    (project_dir / "composer.lock").write_text(
+        json.dumps({"packages": [{"name": "drupal/core", "version": "10.0.0"}]})
+    )
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch("drupal_scout.application.WorkersManager") as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch(
+            "sys.argv",
+            [
+                "drupal-scout",
+                "-d",
+                str(project_dir),
+                "-m",
+                "drupal/webform",
+                "--deep-scan=git",
+            ],
+        ):
+            await app.run()
+
+        audit = app.modules["drupal/webform"].deep_scan
+        assert audit is not None
+        assert audit.mode == "git"
+        assert audit.index_status == AuditStatus.FOUND
+        assert len(audit.patches) == 0
