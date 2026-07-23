@@ -19,12 +19,26 @@ class JSONFormatter(Formatter):
         """
         output: list[dict] = []
         for module in modules:
-            output.append({
+            mod_dict: dict = {
                 'name': module.name,
                 'version': module.version,
                 'suitable_entries': [],
                 'failed': module.failed
-            })
+            }
+            if module.git_audit is not None:
+                mod_dict['git_audit'] = {
+                    'module_path': module.git_audit.module_path,
+                    'index_status': module.git_audit.index_status.value if hasattr(module.git_audit.index_status, 'value') else str(module.git_audit.index_status),
+                    'history_status': module.git_audit.history_status.value if hasattr(module.git_audit.history_status, 'value') else str(module.git_audit.history_status),
+                    'index_reason': module.git_audit.index_reason,
+                    'history_reason': module.git_audit.history_reason,
+                    'tracked_files_count': module.git_audit.tracked_files_count,
+                    'recent_commits': module.git_audit.recent_commits,
+                    'patches': module.git_audit.patches,
+                }
+
+
+            output.append(mod_dict)
 
             # omit modules that are not active or failed
             if module.active is False or module.failed:
@@ -36,4 +50,3 @@ class JSONFormatter(Formatter):
                     'requirement': entry['requirement']
                 })
         return json.dumps(output, indent=4)
-

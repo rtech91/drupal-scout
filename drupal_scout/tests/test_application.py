@@ -1,7 +1,9 @@
 import argparse
 import tempfile
 import json
+import subprocess
 from io import StringIO
+
 from os import mkdir
 from os.path import join
 from pathlib import Path
@@ -666,3 +668,116 @@ async def test_run_targeted_scan_exits_when_core_cannot_be_detected():
                 assert exc_info.value.code == 1
                 output = mock_stderr.getvalue()
                 assert "Unable to determine Drupal core version" in output
+
+
+@pytest.mark.asyncio
+async def test_git_audit_orchestration(make_composer_project, make_git_repo):
+    """Test targeted scan orchestration with --git-audit for single and multiple modules."""
+    project_dir = make_composer_project(packages_map={
+        "drupal/webform": "../../web/modules/contrib/webform",
+        "drupal/token": "../../web/modules/contrib/token",
+    })
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text('{"require": {"drupal/core": "^10.0.0"}}')
+    (project_dir / "composer.lock").write_text('{"packages": [{"name": "drupal/core", "version": "10.0.0"}]}')
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+
+    mod2 = project_dir / "web" / "modules" / "contrib" / "token"
+    mod2.mkdir(parents=True, exist_ok=True)
+    (mod2 / "token.module").write_text("<?php\n")
+
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', [
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--git-audit'
+        ]):
+            await app.run()
+
+        assert len(app.modules) == 2
+        assert app.modules['drupal/webform'].git_audit is not None
+        assert app.modules['drupal/webform'].git_audit.index_status == 'found'
+        assert app.modules['drupal/token'].git_audit is not None
+        assert app.modules['drupal/token'].git_audit.index_status == 'found'
+
+
+@pytest.mark.asyncio
+async def test_global_deep_scan_orchestration(make_composer_project, make_git_repo):
+    """Test global scan orchestration with --deep-scan (no -m flag)."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}}
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(json.dumps({
+        "require": {"drupal/core": "^10.0.0", "drupal/webform": "^6.0"},
+        "extra": {"patches": {"drupal/webform": {"Fix webform": "patches/webform.patch"}}}
+    }))
+    (project_dir / "composer.lock").write_text(json.dumps({
+        "packages": [
+            {"name": "drupal/core", "version": "10.0.0"},
+            {"name": "drupal/webform", "version": "6.0.0"}
+        ]
+    }))
+    vendor_c = project_dir / "vendor" / "composer"
+    vendor_c.mkdir(parents=True, exist_ok=True)
+    (vendor_c / "platform_check.php").touch()
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', ['drupal-scout', '-d', str(project_dir), '--deep-scan']):
+            await app.run()
+
+        assert 'drupal/webform' in app.modules
+        audit = app.modules['drupal/webform'].git_audit
+        assert audit is not None
+        assert audit.index_status == 'found'
+        assert len(audit.patches) == 1
+        assert audit.patches[0]['description'] == 'Fix webform'
+
+
+
+@pytest.mark.asyncio
+async def test_git_audit_continuation_on_partial_failure(make_composer_project, make_git_repo):
+    """Test that failure to resolve one module does not halt auditing of other modules."""
+    project_dir = make_composer_project(packages_map={
+        "drupal/webform": "../../web/modules/contrib/webform",
+        # drupal/token is in packages_map but its folder will not be created
+        "drupal/token": "../../web/modules/contrib/token",
+    })
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text('{"require": {"drupal/core": "^10.0.0"}}')
+    (project_dir / "composer.lock").write_text('{"packages": [{"name": "drupal/core", "version": "10.0.0"}]}')
+
+    mod1 = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod1.mkdir(parents=True, exist_ok=True)
+    (mod1 / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    app = Application()
+    with patch('drupal_scout.application.WorkersManager') as MockWorkersManager:
+        MockWorkersManager.return_value.run = AsyncMock()
+        with patch('sys.argv', [
+            'drupal-scout', '-d', str(project_dir), '-m', 'drupal/webform', 'drupal/token', '--git-audit'
+        ]):
+            await app.run()
+
+        assert app.modules['drupal/webform'].git_audit.index_status == 'found'
+        assert app.modules['drupal/token'].git_audit.index_status == 'unavailable'
+        assert "does not exist" in app.modules['drupal/token'].git_audit.index_reason
+
+

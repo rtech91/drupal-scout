@@ -9,6 +9,8 @@ from .exceptions import *
 from .module import Module
 from .workers_manager import WorkersManager
 from .output import ConsoleOutputHandler, logger
+from .deep_scan import audit_modules_async
+
 
 
 class Application:
@@ -94,6 +96,9 @@ class Application:
         )
         await workers_manager.run()
 
+        if getattr(args, "deep_scan", False) or getattr(args, "git_audit", False):
+            await audit_modules_async(list(self.__modules.values()), args.directory)
+
         formatter = FormatterFactory.get_formatter(args)
         if formatter:
             self.output.print(formatter.format(list(self.__modules.values())))
@@ -159,10 +164,14 @@ class Application:
             )
             await workers_manager.run()
 
+            if getattr(args, "deep_scan", False) or getattr(args, "git_audit", False):
+                await audit_modules_async(list(self.__modules.values()), args.directory)
+
             # output the results
             formatter = FormatterFactory.get_formatter(args)
             if formatter:
                 self.output.print(formatter.format(list(self.__modules.values())))
+
         else:
             logger.warning("No modules were found in the composer.json file.")
 
@@ -243,6 +252,16 @@ class Application:
                  '--directory for installed-version protection when available.',
             default=[]
         )
+
+        parser.add_argument(
+            '--deep-scan',
+            '--git-audit',
+            dest='deep_scan',
+            help='Perform a read-only local deep scan (Git index, commit history, and Composer patches) for modules.',
+            action='store_true',
+            default=False
+        )
+
 
         subparsers = parser.add_subparsers(dest="command")
         info_parser = subparsers.add_parser('info', help='Diagnostic information about the tool and environment')

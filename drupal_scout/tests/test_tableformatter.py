@@ -76,3 +76,38 @@ class TestTableFormatter(TestCase):
 
         self.assertIn('drupal/no_match', result)
         self.assertIn('No suitable entries found', result)
+
+    def test_format_module_with_git_audit_columns(self):
+        """
+        Test that Git index and Git history columns appear when git_audit is present.
+        """
+        from drupal_scout.module import ModuleGitAudit, AuditStatus
+
+        module = Module(name='drupal/webform')
+        module.version = '6.2.0'
+        module.git_audit = ModuleGitAudit(
+            module_path='web/modules/contrib/webform',
+            index_status=AuditStatus.FOUND,
+            history_status=AuditStatus.CLEAR
+        )
+
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
+
+        self.assertIn('Git index', result)
+        self.assertIn('Git history', result)
+        self.assertIn('found', result)
+        self.assertIn('clear', result)
+
+    def test_format_module_without_git_audit_columns(self):
+        """
+        Test that Git index and Git history columns are omitted when git_audit is None.
+        """
+        module = Module(name='drupal/webform')
+        module.version = '6.2.0'
+
+        table = self.formatter.format([module])
+        result = self._render_to_string(table)
+
+        self.assertNotIn('Git index', result)
+        self.assertNotIn('Git history', result)

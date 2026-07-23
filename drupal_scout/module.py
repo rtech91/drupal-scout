@@ -1,3 +1,28 @@
+from enum import Enum
+from dataclasses import dataclass, field
+
+
+class AuditStatus(str, Enum):
+    FOUND = "found"
+    CLEAR = "clear"
+    UNAVAILABLE = "unavailable"
+    INCOMPLETE = "incomplete"
+
+
+@dataclass
+class ModuleGitAudit:
+    module_path: str | None = None
+    index_status: AuditStatus = AuditStatus.UNAVAILABLE
+    history_status: AuditStatus = AuditStatus.UNAVAILABLE
+    index_reason: str | None = None
+    history_reason: str | None = None
+    tracked_files_count: int = 0
+    recent_commits: list[dict[str, str]] = field(default_factory=list)
+    patches: list[dict[str, str]] = field(default_factory=list)
+
+
+
+
 class Module:
     """
     Represents a Drupal module.
@@ -16,3 +41,4 @@ class Module:
         self.version: str | None = None
         self.transitive_entries: list = []
         self.suitable_entries: list = []
+        self.git_audit: ModuleGitAudit | None = None

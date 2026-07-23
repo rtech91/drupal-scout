@@ -454,3 +454,117 @@ async def test_output_purity_restored_after_error():
 
     assert sys.stdout is original_stdout
     assert sys.stderr is original_stderr
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_git_audit_true(make_composer_project, make_git_repo):
+    """Verify MCP scan_specific_modules includes git_audit when requested."""
+    import subprocess
+    project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
+    make_git_repo(project_dir)
+
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+            git_audit=True,
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "git_audit" in result["modules"][0]
+    assert result["modules"][0]["git_audit"]["index_status"] == "found"
+    assert result["modules"][0]["git_audit"]["history_status"] == "found"
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_git_audit_default_false(make_composer_project, make_git_repo):
+    """Verify MCP scan_specific_modules omits git_audit by default."""
+    project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
+    make_git_repo(project_dir)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "git_audit" not in result["modules"][0]
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_git_audit_unavailable_status(make_composer_project):
+    """Verify MCP scan_specific_modules returns unavailable audit status for non-git dir."""
+    project_dir = make_composer_project(packages_map={"drupal/webform": "../../web/modules/contrib/webform"})
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+            git_audit=True,
+        )
+
+    assert "modules" in result
+    audit = result["modules"][0]["git_audit"]
+    assert audit["index_status"] == "unavailable"
+    assert audit["history_status"] == "unavailable"
+    assert "Not a Git repository" in audit["index_reason"]
+
+
+@pytest.mark.asyncio
+async def test_perform_full_project_scan_deep_scan(make_composer_project, make_git_repo):
+    """Verify MCP perform_full_project_scan supports deep_scan."""
+    import subprocess
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}}
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(json.dumps({
+        "require": {"drupal/core": "^10.0.0", "drupal/webform": "^6.0"},
+        "extra": {"patches": {"drupal/webform": {"Fix webform": "patches/webform.patch"}}}
+    }))
+    (project_dir / "composer.lock").write_text(json.dumps({
+        "packages": [{"name": "drupal/core", "version": "10.0.0"}]
+    }))
+
+
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await perform_full_project_scan(
+            directory=str(project_dir),
+            deep_scan=True,
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "git_audit" in result["modules"][0]
+    audit = result["modules"][0]["git_audit"]
+    assert audit["index_status"] == "found"
+    assert len(audit["patches"]) == 1
+    assert audit["patches"][0]["description"] == "Fix webform"
+
+
+

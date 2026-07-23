@@ -111,6 +111,8 @@ async def perform_full_project_scan(
     directory: str = ".",
     no_lock: bool = False,
     limit: int = 10,
+    deep_scan: bool = False,
+    git_audit: bool = False,
 ) -> dict:
     """Analyze an entire Drupal project for module upgrade compatibility.
 
@@ -118,18 +120,21 @@ async def perform_full_project_scan(
     composer.lock for installed version protection, and queries the Drupal
     packages API to find transitive-compatible versions for a core upgrade.
 
-    Equivalent to: drupal-scout [-d DIRECTORY] [-n] [-l LIMIT]
+    Equivalent to: drupal-scout [-d DIRECTORY] [-n] [-l LIMIT] [--deep-scan]
 
     Args:
         directory: Path to the Drupal project directory. Defaults to ".".
         no_lock: If True, skip using composer.lock for installed version
             detection. Defaults to False.
         limit: Maximum number of concurrent API requests. Defaults to 10.
+        deep_scan: Perform read-only local deep scan (Git index, history, patches).
+            Defaults to False.
+        git_audit: Alias to deep_scan.
 
     Returns:
         A JSON object with keys:
         - modules: list of module scan results (name, version,
-          suitable_entries, failed)
+          suitable_entries, failed, deep_scan/git_audit)
         - drupal_core_version: detected core version string
         - lock_file_used: whether composer.lock was used
         - error: error message if the scan could not proceed
@@ -186,6 +191,11 @@ async def perform_full_project_scan(
     )
     await workers_manager.run()
 
+    if deep_scan or git_audit:
+        from .deep_scan import audit_modules_async
+
+        await audit_modules_async(list(modules.values()), directory)
+
     # Format output as JSON
     formatter = JSONFormatter()
     modules_json = json.loads(formatter.format(list(modules.values())))
@@ -208,6 +218,8 @@ async def scan_specific_modules(
     core: Optional[str] = None,
     directory: str = ".",
     limit: int = 10,
+    deep_scan: bool = False,
+    git_audit: bool = False,
 ) -> dict:
     """Scan specific Drupal modules for upgrade compatibility.
 
@@ -219,7 +231,7 @@ async def scan_specific_modules(
     installed-version protection and the response includes
     ``lock_file_used: true``. If not found, the scan proceeds without it.
 
-    Equivalent to: drupal-scout --modules ... [--core ...] [-d DIRECTORY]
+    Equivalent to: drupal-scout --modules ... [--core ...] [-d DIRECTORY] [--deep-scan]
 
     Args:
         modules: List of Drupal module names to scan
@@ -230,6 +242,9 @@ async def scan_specific_modules(
         directory: Path to the Drupal project directory for auto-detection.
             Defaults to ".".
         limit: Maximum number of concurrent API requests. Defaults to 10.
+        deep_scan: Perform read-only local deep scan for requested modules.
+            Defaults to False.
+        git_audit: Alias to deep_scan.
 
     Returns:
         A JSON object with keys:
@@ -282,6 +297,12 @@ async def scan_specific_modules(
     )
     await workers_manager.run()
 
+    if deep_scan or git_audit:
+        from .deep_scan import audit_modules_async
+
+        await audit_modules_async(list(module_objects.values()), directory)
+
+
     # Format output
     formatter = JSONFormatter()
     modules_json = json.loads(formatter.format(list(module_objects.values())))
@@ -291,6 +312,7 @@ async def scan_specific_modules(
         "drupal_core_version": resolved_core,
         "lock_file_used": lock_file_used,
     }
+
 
 
 # ---------------------------------------------------------------------------
