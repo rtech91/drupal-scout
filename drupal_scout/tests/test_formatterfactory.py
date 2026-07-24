@@ -3,8 +3,8 @@ from unittest import TestCase
 
 from drupal_scout.formatters.formatterfactory import FormatterFactory
 from drupal_scout.formatters.jsonformatter import JSONFormatter
-from drupal_scout.formatters.tableformatter import TableFormatter
 from drupal_scout.formatters.suggestformatter import SuggestFormatter
+from drupal_scout.formatters.tableformatter import TableFormatter
 
 
 class TestFormatterFactory(TestCase):
@@ -12,7 +12,7 @@ class TestFormatterFactory(TestCase):
         """
         Test that get_formatter returns JSONFormatter for 'json' format.
         """
-        args = Namespace(format='json')
+        args = Namespace(format="json")
         formatter = FormatterFactory.get_formatter(args)
         self.assertIsInstance(formatter, JSONFormatter)
 
@@ -20,7 +20,7 @@ class TestFormatterFactory(TestCase):
         """
         Test that get_formatter returns TableFormatter for 'table' format.
         """
-        args = Namespace(format='table')
+        args = Namespace(format="table")
         formatter = FormatterFactory.get_formatter(args)
         self.assertIsInstance(formatter, TableFormatter)
 
@@ -28,7 +28,7 @@ class TestFormatterFactory(TestCase):
         """
         Test that get_formatter returns SuggestFormatter for 'suggest' format.
         """
-        args = Namespace(format='suggest', directory='/tmp', save_dump=False)
+        args = Namespace(format="suggest", directory="/tmp", save_dump=False)
         formatter = FormatterFactory.get_formatter(args)
         self.assertIsInstance(formatter, SuggestFormatter)
 
@@ -36,6 +36,6 @@ class TestFormatterFactory(TestCase):
         """
         Test that get_formatter returns None for an unknown format name.
         """
-        args = Namespace(format='unknown')
+        args = Namespace(format="unknown")
         formatter = FormatterFactory.get_formatter(args)
         self.assertIsNone(formatter)

@@ -5,8 +5,9 @@ import re
 import aiohttp
 import jq
 from packaging import version
-from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion
+
 from .exceptions import ModuleNotFoundException
 from .module import Module
 
@@ -23,7 +24,12 @@ class Worker:
     The main worker class.
     """
 
-    def __init__(self, module: Module, use_lock_version: str | bool = False, current_core: str = '8'):
+    def __init__(
+        self,
+        module: Module,
+        use_lock_version: str | bool = False,
+        current_core: str = "8",
+    ):
         """
         Initialize the worker.
         :param module:           the module to be processed
@@ -43,9 +49,16 @@ class Worker:
                 composer_url = self.prepare_composer_url(self.module.name)
                 contents = await self._get(composer_url)
                 self.module.transitive_entries = self.find_transitive_entries(contents)
-                self.module.suitable_entries = self.find_suitable_entries(self.module.transitive_entries)
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                logger.error("Module %s failed after %d attempts: %s", self.module.name, _MAX_RETRIES, e)
+                self.module.suitable_entries = self.find_suitable_entries(
+                    self.module.transitive_entries
+                )
+            except (TimeoutError, aiohttp.ClientError) as e:
+                logger.error(
+                    "Module %s failed after %d attempts: %s",
+                    self.module.name,
+                    _MAX_RETRIES,
+                    e,
+                )
                 self.module.failed = True
             except ModuleNotFoundException as e:
                 self.module.active = False
@@ -67,38 +80,49 @@ class Worker:
                 wait = _BACKOFF_FACTOR * (2 ** (attempt - 2))
                 logger.warning(
                     "Retrying module %s... attempt %d/%d",
-                    self.module.name, attempt, _MAX_RETRIES
+                    self.module.name,
+                    attempt,
+                    _MAX_RETRIES,
                 )
                 await asyncio.sleep(wait)
             try:
-                async with aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session:
-                    async with session.get(url) as response:
-                        if response.status == 404:
-                            raise ModuleNotFoundException(
-                                "The module {} is not found. Possibly it is no more supported.".format(self.module.name))
-                        if response.status in _RETRY_STATUS_CODES:
-                            last_exception = aiohttp.ClientResponseError(
-                                response.request_info,
-                                response.history,
-                                status=response.status,
-                                message=f"HTTP {response.status} for {url}",
+                async with (
+                    aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session,
+                    session.get(url) as response,
+                ):
+                    if response.status == 404:
+                        raise ModuleNotFoundException(
+                            f"The module {self.module.name} is not found. Possibly it is no more supported."
+                        )
+                    if response.status in _RETRY_STATUS_CODES:
+                        last_exception = aiohttp.ClientResponseError(
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                            message=f"HTTP {response.status} for {url}",
+                        )
+                        if attempt < _MAX_RETRIES:
+                            logger.warning(
+                                "Retrying module %s... attempt %d/%d (HTTP %d)",
+                                self.module.name,
+                                attempt + 1,
+                                _MAX_RETRIES,
+                                response.status,
                             )
-                            if attempt < _MAX_RETRIES:
-                                logger.warning(
-                                    "Retrying module %s... attempt %d/%d (HTTP %d)",
-                                    self.module.name, attempt + 1, _MAX_RETRIES, response.status
-                                )
-                            continue
-                        contents = await response.json()
-                        return contents
+                        continue
+                    contents = await response.json()
+                    return contents
             except ModuleNotFoundException:
                 raise
-            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            except (TimeoutError, aiohttp.ClientError) as exc:
                 last_exception = exc
                 if attempt < _MAX_RETRIES:
                     logger.warning(
                         "Retrying module %s... attempt %d/%d (%s)",
-                        self.module.name, attempt + 1, _MAX_RETRIES, type(exc).__name__
+                        self.module.name,
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        type(exc).__name__,
                     )
         assert last_exception is not None
         raise last_exception
@@ -111,7 +135,9 @@ class Worker:
         :return:   the URL to the JSON data of the module
         :rtype:    str
         """
-        return 'https://packages.drupal.org/files/packages/8/p2/' + module_name + '.json'
+        return (
+            "https://packages.drupal.org/files/packages/8/p2/" + module_name + ".json"
+        )
 
     def find_transitive_entries(self, response_contents: dict) -> list:
         """
@@ -122,16 +148,23 @@ class Worker:
         :rtype:     list
         """
         transitive_entries = []
-        entries = jq.compile(
-            '.packages."' + self.module.name + '" | .[] | select(.require != null) | {"version", '
-                                               '"requirement":.require."drupal/core"}').input(response_contents).all()
+        entries = (
+            jq.compile(
+                '.packages."'
+                + self.module.name
+                + '" | .[] | select(.require != null) | {"version", '
+                '"requirement":.require."drupal/core"}'
+            )
+            .input(response_contents)
+            .all()
+        )
         for entry in entries:
-            req_str = entry.get('requirement', '')
+            req_str = entry.get("requirement", "")
             if req_str and "|" in req_str:
                 req_clean = req_str.replace("^", "").replace(" ", "")
-                parts = [p.strip() for p in re.split(r'\|+', req_clean) if p.strip()]
+                parts = [p.strip() for p in re.split(r"\|+", req_clean) if p.strip()]
                 entry["requirement_parts"] = parts
-                entry['requirement'] = " || ".join(parts)
+                entry["requirement"] = " || ".join(parts)
                 transitive_entries.append(entry)
         return transitive_entries
 
@@ -152,29 +185,31 @@ class Worker:
             return False
 
         # Fast path for simple numbers or caret major versions e.g. '8', '^8', '9', '10'
-        if re.match(r'^[\^~]?\d+$', raw_clause):
+        if re.match(r"^[\^~]?\d+$", raw_clause):
             try:
-                major = int(re.sub(r'[^\d]', '', raw_clause))
+                major = int(re.sub(r"[^\d]", "", raw_clause))
                 return core_ver.major == major
             except ValueError:
                 pass
 
         # Normalize specifiers for SpecifierSet
         spec_str = raw_clause
+
         def _expand_caret(m: re.Match) -> str:
             ver_str = m.group(1)
-            major = int(ver_str.split('.')[0])
+            major = int(ver_str.split(".")[0])
             return f">={ver_str}, <{major + 1}.0.0"
-        spec_str = re.sub(r'\^(\d+(?:\.\d+)*)', _expand_caret, spec_str)
-        spec_str = re.sub(r'(\d+(?:\.\d+)*)\s*([<>=!~])', r'\1, \2', spec_str)
-        parts = [p.strip() for p in spec_str.split(',') if p.strip()]
+
+        spec_str = re.sub(r"\^(\d+(?:\.\d+)*)", _expand_caret, spec_str)
+        spec_str = re.sub(r"(\d+(?:\.\d+)*)\s*([<>=!~])", r"\1, \2", spec_str)
+        parts = [p.strip() for p in spec_str.split(",") if p.strip()]
         norm_parts = []
         for p in parts:
-            if re.match(r'^\d+\.x$', p):
+            if re.match(r"^\d+\.x$", p):
                 norm_parts.append(f"=={p.split('.')[0]}.*")
-            elif re.match(r'^\d+$', p):
+            elif re.match(r"^\d+$", p):
                 norm_parts.append(f"=={p}.*")
-            elif re.match(r'^\d+(\.\d+)+$', p):
+            elif re.match(r"^\d+(\.\d+)+$", p):
                 norm_parts.append(f">={p}")
             else:
                 norm_parts.append(p)
@@ -184,8 +219,12 @@ class Worker:
             spec_set = SpecifierSet(norm_spec_str)
             return core_ver in spec_set
         except (InvalidSpecifier, InvalidVersion) as exc:
-            logger.warning("Failed to evaluate requirement clause %r as SpecifierSet: %s", clause, exc)
-            matches = re.findall(r'\b\d+\b', raw_clause)
+            logger.warning(
+                "Failed to evaluate requirement clause %r as SpecifierSet: %s",
+                clause,
+                exc,
+            )
+            matches = re.findall(r"\b\d+\b", raw_clause)
             if matches:
                 try:
                     majors = [int(m) for m in matches]
@@ -204,9 +243,13 @@ class Worker:
         """
         suitable_entries = []
         for entry in transitive_entries:
-            req_parts = entry.get('requirement_parts', [])
-            if not req_parts and 'requirement' in entry:
-                req_parts = [p.strip() for p in re.split(r'\|+', entry['requirement']) if p.strip()]
+            req_parts = entry.get("requirement_parts", [])
+            if not req_parts and "requirement" in entry:
+                req_parts = [
+                    p.strip()
+                    for p in re.split(r"\|+", entry["requirement"])
+                    if p.strip()
+                ]
 
             if any(self._is_clause_satisfied(part) for part in req_parts):
                 suitable_entries.append(entry)
@@ -216,11 +259,12 @@ class Worker:
             filtered = []
             for entry in suitable_entries:
                 try:
-                    if version.parse(entry['version']) >= version.parse(self.module.version):
+                    if version.parse(entry["version"]) >= version.parse(
+                        self.module.version
+                    ):
                         filtered.append(entry)
                 except Exception:
                     filtered.append(entry)
             suitable_entries = filtered
 
         return suitable_entries
-

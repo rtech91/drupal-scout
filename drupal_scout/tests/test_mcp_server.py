@@ -18,16 +18,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from drupal_scout.mcp_server import (
+    generate_composer_upgrade_json,
     get_diagnostic_info,
     perform_full_project_scan,
     scan_specific_modules,
-    generate_composer_upgrade_json,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_composer2_project(temp_dir, composer_data, lock_data=None):
     """Create a minimal Composer 2 project structure in a temp directory."""
@@ -86,9 +86,7 @@ async def test_get_diagnostic_info_with_lock_and_core():
         with open(join(temp_dir, "composer.json"), "w") as f:
             json.dump({"require": {"drupal/core": "^10.0"}}, f)
         with open(join(temp_dir, "composer.lock"), "w") as f:
-            json.dump(
-                {"packages": [{"name": "drupal/core", "version": "10.2.0"}]}, f
-            )
+            json.dump({"packages": [{"name": "drupal/core", "version": "10.2.0"}]}, f)
 
         with patch("drupal_scout.mcp_server.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
@@ -153,9 +151,7 @@ async def test_perform_full_project_scan_no_lock():
 
         with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
             MockWM.return_value.run = AsyncMock()
-            result = await perform_full_project_scan(
-                directory=temp_dir, no_lock=True
-            )
+            result = await perform_full_project_scan(directory=temp_dir, no_lock=True)
 
         assert result["lock_file_used"] is False
         assert result["drupal_core_version"] == "10.0"
@@ -195,9 +191,7 @@ async def test_perform_full_project_scan_no_modules():
     """Full scan returns message when no drupal/* modules found."""
     with tempfile.TemporaryDirectory() as temp_dir:
         composer_data = {"require": {"drupal/core": "^10.0"}}
-        lock_data = {
-            "packages": [{"name": "drupal/core", "version": "10.0.0"}]
-        }
+        lock_data = {"packages": [{"name": "drupal/core", "version": "10.0.0"}]}
         _make_composer2_project(temp_dir, composer_data, lock_data)
 
         result = await perform_full_project_scan(directory=temp_dir)
@@ -369,9 +363,7 @@ async def test_generate_composer_upgrade_json_no_modules():
     """Returns message when no drupal/* modules found."""
     with tempfile.TemporaryDirectory() as temp_dir:
         composer_data = {"require": {"drupal/core": "^10.0"}}
-        lock_data = {
-            "packages": [{"name": "drupal/core", "version": "10.0.0"}]
-        }
+        lock_data = {"packages": [{"name": "drupal/core", "version": "10.0.0"}]}
         _make_composer2_project(temp_dir, composer_data, lock_data)
 
         result = await generate_composer_upgrade_json(directory=temp_dir)
@@ -430,9 +422,7 @@ async def test_output_purity_no_stdout_leakage():
             with open(join(temp_dir, "composer.json"), "w") as f:
                 json.dump({"require": {"drupal/core": "^10.0"}}, f)
 
-            with patch(
-                "drupal_scout.mcp_server.subprocess.run"
-            ) as mock_run:
+            with patch("drupal_scout.mcp_server.subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock()
                 await get_diagnostic_info(directory=temp_dir)
 
@@ -454,3 +444,137 @@ async def test_output_purity_restored_after_error():
 
     assert sys.stdout is original_stdout
     assert sys.stderr is original_stderr
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_deep_scan_true(
+    make_composer_project, make_git_repo
+):
+    """Verify MCP scan_specific_modules includes deep_scan when requested."""
+    import subprocess
+
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"}
+    )
+    make_git_repo(project_dir)
+
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+            deep_scan=True,
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "deep_scan" in result["modules"][0]
+    assert result["modules"][0]["deep_scan"]["index_status"] == "found"
+    assert result["modules"][0]["deep_scan"]["history_status"] == "found"
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_deep_scan_default_false(
+    make_composer_project, make_git_repo
+):
+    """Verify MCP scan_specific_modules omits deep_scan by default."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"}
+    )
+    make_git_repo(project_dir)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "deep_scan" not in result["modules"][0]
+
+
+@pytest.mark.asyncio
+async def test_scan_specific_modules_deep_scan_unavailable_status(
+    make_composer_project,
+):
+    """Verify MCP scan_specific_modules returns unavailable audit status for non-git dir."""
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"}
+    )
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await scan_specific_modules(
+            modules=["drupal/webform"],
+            core="10.0.0",
+            directory=str(project_dir),
+            deep_scan=True,
+        )
+
+    assert "modules" in result
+    audit = result["modules"][0]["deep_scan"]
+    assert audit["index_status"] == "unavailable"
+    assert audit["history_status"] == "unavailable"
+    assert "Not a Git repository" in audit["index_reason"]
+
+
+@pytest.mark.asyncio
+async def test_perform_full_project_scan_deep_scan(
+    make_composer_project, make_git_repo
+):
+    """Verify MCP perform_full_project_scan supports deep_scan."""
+    import subprocess
+
+    project_dir = make_composer_project(
+        packages_map={"drupal/webform": "../../web/modules/contrib/webform"},
+        patches_inline={"drupal/webform": {"Fix webform": "patches/webform.patch"}},
+    )
+    make_git_repo(project_dir)
+    (project_dir / "composer.json").write_text(
+        json.dumps(
+            {
+                "require": {"drupal/core": "^10.0.0", "drupal/webform": "^6.0"},
+                "extra": {
+                    "patches": {
+                        "drupal/webform": {"Fix webform": "patches/webform.patch"}
+                    }
+                },
+            }
+        )
+    )
+    (project_dir / "composer.lock").write_text(
+        json.dumps({"packages": [{"name": "drupal/core", "version": "10.0.0"}]})
+    )
+
+    mod_dir = project_dir / "web" / "modules" / "contrib" / "webform"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "webform.module").write_text("<?php\n")
+    subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add webform"], cwd=project_dir, check=True)
+
+    with patch("drupal_scout.mcp_server.WorkersManager") as MockWM:
+        MockWM.return_value.run = AsyncMock()
+        result = await perform_full_project_scan(
+            directory=str(project_dir),
+            deep_scan=True,
+        )
+
+    assert "modules" in result
+    assert len(result["modules"]) == 1
+    assert "deep_scan" in result["modules"][0]
+    audit = result["modules"][0]["deep_scan"]
+    assert audit["index_status"] == "found"
+    assert len(audit["patches"]) == 1
+    assert audit["patches"][0]["description"] == "Fix webform"

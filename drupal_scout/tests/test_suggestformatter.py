@@ -27,15 +27,15 @@ class TestSuggestFormatter(TestCase):
             args = Namespace(directory=temp_dir, save_dump=False)
             formatter = SuggestFormatter(args)
 
-            module = Module(name='drupal/webform')
-            module.version = '6.1.0'
+            module = Module(name="drupal/webform")
+            module.version = "6.1.0"
             module.suitable_entries = [
-                {'version': '6.2.0', 'requirement': '^9 || ^10'},
+                {"version": "6.2.0", "requirement": "^9 || ^10"},
             ]
 
             result = json.loads(formatter.format([module]))
 
-            self.assertEqual(result['require']['drupal/webform'], '^6.2.0')
+            self.assertEqual(result["require"]["drupal/webform"], "^6.2.0")
 
     def test_format_multiple_suitable_entries(self):
         """
@@ -46,17 +46,17 @@ class TestSuggestFormatter(TestCase):
             args = Namespace(directory=temp_dir, save_dump=False)
             formatter = SuggestFormatter(args)
 
-            module = Module(name='drupal/webform')
-            module.version = '6.1.0'
+            module = Module(name="drupal/webform")
+            module.version = "6.1.0"
             module.active = True
             module.suitable_entries = [
-                {'version': '6.3.0', 'requirement': '^10'},
-                {'version': '6.2.0', 'requirement': '^9 || ^10'},
+                {"version": "6.3.0", "requirement": "^10"},
+                {"version": "6.2.0", "requirement": "^9 || ^10"},
             ]
 
             result = json.loads(formatter.format([module]))
 
-            self.assertEqual(result['require']['drupal/webform'], '^6.2.0')
+            self.assertEqual(result["require"]["drupal/webform"], "^6.2.0")
 
     def test_format_no_suitable_entries(self):
         """
@@ -67,14 +67,14 @@ class TestSuggestFormatter(TestCase):
             args = Namespace(directory=temp_dir, save_dump=False)
             formatter = SuggestFormatter(args)
 
-            module = Module(name='drupal/webform')
-            module.version = '6.1.0'
+            module = Module(name="drupal/webform")
+            module.version = "6.1.0"
             module.suitable_entries = []
 
             result = json.loads(formatter.format([module]))
 
             # Original version requirement should be preserved
-            self.assertEqual(result['require']['drupal/webform'], '^6.1')
+            self.assertEqual(result["require"]["drupal/webform"], "^6.1")
 
     def test_format_save_dump_writes_file(self):
         """
@@ -85,10 +85,10 @@ class TestSuggestFormatter(TestCase):
             args = Namespace(directory=temp_dir, save_dump=True)
             formatter = SuggestFormatter(args)
 
-            module = Module(name='drupal/webform')
-            module.version = '6.1.0'
+            module = Module(name="drupal/webform")
+            module.version = "6.1.0"
             module.suitable_entries = [
-                {'version': '6.2.0', 'requirement': '^9 || ^10'},
+                {"version": "6.2.0", "requirement": "^9 || ^10"},
             ]
 
             formatter.format([module])
@@ -97,7 +97,7 @@ class TestSuggestFormatter(TestCase):
             with open(os.path.join(temp_dir, "composer.json"), "r") as f:
                 saved_data = json.load(f)
 
-            self.assertEqual(saved_data['require']['drupal/webform'], '^6.2.0')
+            self.assertEqual(saved_data["require"]["drupal/webform"], "^6.2.0")
 
     def test_format_no_save_dump(self):
         """
@@ -108,10 +108,10 @@ class TestSuggestFormatter(TestCase):
             args = Namespace(directory=temp_dir, save_dump=False)
             formatter = SuggestFormatter(args)
 
-            module = Module(name='drupal/webform')
-            module.version = '6.1.0'
+            module = Module(name="drupal/webform")
+            module.version = "6.1.0"
             module.suitable_entries = [
-                {'version': '6.2.0', 'requirement': '^9 || ^10'},
+                {"version": "6.2.0", "requirement": "^9 || ^10"},
             ]
 
             formatter.format([module])
@@ -120,21 +120,21 @@ class TestSuggestFormatter(TestCase):
             with open(os.path.join(temp_dir, "composer.json"), "r") as f:
                 saved_data = json.load(f)
 
-            self.assertEqual(saved_data['require']['drupal/webform'], '^6.1')
+            self.assertEqual(saved_data["require"]["drupal/webform"], "^6.1")
 
     def test_find_lowest_version(self):
         """
         Test the find_lowest_version helper directly with various orderings.
         """
-        args = Namespace(directory='/tmp', save_dump=False)
+        args = Namespace(directory="/tmp", save_dump=False)
         formatter = SuggestFormatter(args)
 
         entries = [
-            {'version': '3.0.0'},
-            {'version': '1.5.0'},
-            {'version': '2.0.0'},
-            {'version': '1.0.0'},
+            {"version": "3.0.0"},
+            {"version": "1.5.0"},
+            {"version": "2.0.0"},
+            {"version": "1.0.0"},
         ]
 
         result = formatter.find_lowest_version(entries)
-        self.assertEqual(result, '1.0.0')
+        self.assertEqual(result, "1.0.0")

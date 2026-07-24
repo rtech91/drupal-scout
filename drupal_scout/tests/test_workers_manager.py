@@ -1,9 +1,11 @@
-import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from drupal_scout.workers_manager import WorkersManager
+
 from drupal_scout.module import Module
 from drupal_scout.output import SilentOutputHandler
+from drupal_scout.workers_manager import WorkersManager
+
 
 @pytest.mark.asyncio
 async def test_run_with_custom_concurrency():
@@ -11,10 +13,16 @@ async def test_run_with_custom_concurrency():
     modules = [Module("module_1"), Module("module_2")]
     output = SilentOutputHandler()
 
-    manager = WorkersManager(modules=modules, concurrency_limit=4, output=output, current_core="9", use_lock_version=True)
+    manager = WorkersManager(
+        modules=modules,
+        concurrency_limit=4,
+        output=output,
+        current_core="9",
+        use_lock_version=True,
+    )
     assert manager.concurrency_limit == 4
 
-    with patch('drupal_scout.workers_manager.Worker') as mock_worker_class:
+    with patch("drupal_scout.workers_manager.Worker") as mock_worker_class:
         mock_worker_instance = MagicMock()
         mock_worker_instance.run = AsyncMock()
         mock_worker_class.return_value = mock_worker_instance
@@ -32,12 +40,18 @@ async def test_run_with_custom_concurrency():
 async def test_run_with_default_cpu_concurrency():
     """Test WorkersManager falls back to cpu_count when concurrency_limit <= 0."""
     output = SilentOutputHandler()
-    with patch('drupal_scout.workers_manager.cpu_count', return_value=8):
+    with patch("drupal_scout.workers_manager.cpu_count", return_value=8):
         modules = [Module("module_1")]
-        manager = WorkersManager(modules=modules, concurrency_limit=0, output=output, current_core="8.8", use_lock_version=False)
+        manager = WorkersManager(
+            modules=modules,
+            concurrency_limit=0,
+            output=output,
+            current_core="8.8",
+            use_lock_version=False,
+        )
         assert manager.concurrency_limit == 8
 
-    with patch('drupal_scout.workers_manager.Worker') as mock_worker_class:
+    with patch("drupal_scout.workers_manager.Worker") as mock_worker_class:
         mock_worker_instance = MagicMock()
         mock_worker_instance.run = AsyncMock()
         mock_worker_class.return_value = mock_worker_instance
