@@ -184,7 +184,7 @@ class TableFormatter(Formatter):
 
             if clean_count > 0:
                 detail_texts.append(
-                    f"[dim]✔ {clean_count} module(s) clear with no uncommitted files, commits, or patches.[/dim]"
+                    f"[dim]✔ {clean_count} module(s) clear with no deep-scan findings.[/dim]"
                 )
 
             if detail_texts:
