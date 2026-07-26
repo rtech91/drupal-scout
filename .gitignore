@@ -156,8 +156,11 @@ cython_debug/
 .vscode/
 *.code-workspace
 *.md
+!README.md
+!docs/*.md
 *.txt
 *.json
+
 
 
 # PyCharm

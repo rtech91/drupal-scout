@@ -78,7 +78,7 @@ drupal-scout [-h] [-v] [-d DIRECTORY] [-n] [-l LIMIT] [-f {table,json,suggest}] 
 
 ### MCP Server Usage
 
-To use Drupal Scout as an MCP server in your AI assistant:
+To run `drupal-scout` as an MCP server for AI coding assistants:
 
 ```bash
 drupal-scout-mcp
@@ -89,6 +89,22 @@ Or with `uvx`:
 ```bash
 uvx --from drupal-scout drupal-scout-mcp
 ```
+
+#### Quick Configuration for Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "drupal-scout": {
+      "command": "uvx",
+      "args": ["--from", "drupal-scout", "drupal-scout-mcp"]
+    }
+  }
+}
+```
+
+For complete setup guides across **Claude Desktop/Code**, **GitHub Copilot**, **Google Antigravity**, and **OpenAI Codex**, see the detailed [MCP Connection Guide](docs/mcp-connection-guide.md).
+
 
 ### Deep Scan & Audit Examples
 
