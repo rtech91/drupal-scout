@@ -36,7 +36,7 @@ This guide provides comprehensive instructions for connecting and configuring th
 
 ## 2. Common Launch Syntax & Environment Standards
 
-Depending on your Python package manager and environment setup, you can launch `drupal-scout` using one of three standard methods:
+Depending on your Python package manager and environment setup, you can launch `drupal-scout` using one of four standard methods:
 
 ### Method A: `uv run` — local checkout (Recommended for development)
 Runs the server using the project's own virtual environment without requiring manual activation. Use this when working with a local checkout of the repository:
