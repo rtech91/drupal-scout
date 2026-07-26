@@ -144,7 +144,7 @@ claude mcp list
 
 ## 4. GitHub Copilot & VS Code Configuration
 
-**Config Location**: Workspace `.vscode/mcp.json` (recommended, add to source control) or via the Command Palette → **MCP: Open User Configuration** for global settings.
+**Config Location**: Workspace `.vscode/mcp.json` (recommended) or via the Command Palette → **MCP: Open User Configuration** for global settings.
 
 > **⚠️ Note**: VS Code's `${workspaceFolder}` variable is **not** expanded in `mcp.json`. Always use an absolute path in `command` and `args`.
 
