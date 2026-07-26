@@ -13,7 +13,7 @@ This guide provides comprehensive instructions for connecting and configuring th
    - [Claude Code CLI (`claude mcp add`)](#claude-code-cli-claude-mcp-add)
 4. [GitHub Copilot & VS Code Configuration](#4-github-copilot--vs-code-configuration)
 5. [Google Antigravity (AGY CLI / IDE) Configuration](#5-google-antigravity-agy-cli--ide-configuration)
-6. [OpenAI Codex & Generic MCP Client Configuration](#6-openai-codex--generic-mcp-client-configuration)
+6. [OpenAI Codex Configuration](#6-openai-codex-configuration)
 7. [MCP Tool Reference Catalog](#7-mcp-tool-reference-catalog)
    - [`get_diagnostic_info`](#1-get_diagnostic_info)
    - [`perform_full_project_scan`](#2-perform_full_project_scan)
