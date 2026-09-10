@@ -392,18 +392,50 @@ class Application:
     def is_composer2(self, args):
         """
         Check if the Drupal project uses Composer 2.
+
+        Detection checks the lockfile first, then Composer runtime markers, and
+        finally the Composer 2 installed metadata shape. Missing or malformed
+        optional metadata is inconclusive and does not escape this predicate.
         :param args:    the arguments passed to the application
         :type args:     argparse.Namespace
         :return:        True if the Drupal project uses Composer 2, False otherwise
         :rtype:         bool
         """
-        # check whether the vendor directory exists and has a composer/platform_check.php file
-        # because this clue is only available in Composer 2
-        return os.path.isdir(
-            os.path.join(args.directory, "vendor")
-        ) and os.path.isfile(
-            os.path.join(args.directory, "vendor", "composer", "platform_check.php")
-        )
+        project_directory = args.directory
+
+        try:
+            with open(os.path.join(project_directory, "composer.lock"), "r") as file:
+                composer_lock = json.load(file)
+            plugin_api_version = (
+                composer_lock.get("plugin-api-version")
+                if isinstance(composer_lock, dict)
+                else None
+            )
+            if isinstance(plugin_api_version, str) and plugin_api_version.startswith(
+                "2."
+            ):
+                return True
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+            pass
+
+        composer_directory = os.path.join(project_directory, "vendor", "composer")
+        for filename in (
+            "InstalledVersions.php",
+            "installed.php",
+            "platform_check.php",
+        ):
+            if os.path.isfile(os.path.join(composer_directory, filename)):
+                return True
+
+        try:
+            with open(os.path.join(composer_directory, "installed.json"), "r") as file:
+                installed = json.load(file)
+            if isinstance(installed, dict) and "packages" in installed:
+                return True
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+            pass
+
+        return False
 
     def determine_drupal_core_version(self, args):
         """
