@@ -19,17 +19,72 @@ from drupal_scout.module import AuditStatus, Module
 class TestApplication(TestCase):
     def test_is_composer2(self):
         """
-        Test the case when the project uses Composer 2.
-        Uses a temporary directory to construct the folder structure.
+        Test Composer 2 detection through lockfile and vendor metadata.
         """
         app = Application()
-        temp_dir = tempfile.TemporaryDirectory()
-        mkdir(temp_dir.name + "/vendor")
-        mkdir(temp_dir.name + "/vendor/composer")
-        Path(temp_dir.name + "/vendor/composer/platform_check.php").touch()
-        args = argparse.Namespace(directory=temp_dir.name)
-        self.assertTrue(app.is_composer2(args))
-        temp_dir.cleanup()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = argparse.Namespace(directory=temp_dir)
+
+            with self.subTest("lockfile plugin API"):
+                Path(temp_dir, "composer.lock").write_text(
+                    json.dumps({"plugin-api-version": "2.6.0"})
+                )
+                self.assertTrue(app.is_composer2(args))
+
+            Path(temp_dir, "composer.lock").unlink()
+            with self.subTest("malformed lockfile"):
+                Path(temp_dir, "composer.lock").write_text("{invalid")
+                self.assertFalse(app.is_composer2(args))
+                Path(temp_dir, "composer.lock").unlink()
+
+            for invalid_lockfile in (
+                [],
+                {"plugin-api-version": 2},
+                {"plugin-api-version": "1.99.0"},
+            ):
+                with self.subTest("unsupported lockfile value", value=invalid_lockfile):
+                    Path(temp_dir, "composer.lock").write_text(
+                        json.dumps(invalid_lockfile)
+                    )
+                    self.assertFalse(app.is_composer2(args))
+                    Path(temp_dir, "composer.lock").unlink()
+
+            composer_directory = Path(temp_dir, "vendor", "composer")
+            composer_directory.mkdir(parents=True)
+
+            for marker in (
+                "InstalledVersions.php",
+                "installed.php",
+                "platform_check.php",
+            ):
+                with self.subTest(marker):
+                    Path(composer_directory, marker).touch()
+                    self.assertTrue(app.is_composer2(args))
+                    Path(composer_directory, marker).unlink()
+
+            with self.subTest("installed metadata dictionary"):
+                Path(composer_directory, "installed.json").write_text(
+                    json.dumps({"packages": []})
+                )
+                self.assertTrue(app.is_composer2(args))
+                Path(composer_directory, "installed.json").unlink()
+
+            with self.subTest("legacy installed metadata list"):
+                Path(composer_directory, "installed.json").write_text(json.dumps([]))
+                self.assertFalse(app.is_composer2(args))
+                Path(composer_directory, "installed.json").unlink()
+
+            with self.subTest("installed metadata without packages"):
+                Path(composer_directory, "installed.json").write_text(
+                    json.dumps({"versions": []})
+                )
+                self.assertFalse(app.is_composer2(args))
+                Path(composer_directory, "installed.json").unlink()
+
+            with self.subTest("malformed metadata"):
+                Path(composer_directory, "installed.json").write_text("{invalid")
+                self.assertFalse(app.is_composer2(args))
+
         self.assertFalse(app.is_composer2(args))
 
     def test_get_drupal_core_version(self):
