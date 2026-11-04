@@ -1,6 +1,6 @@
 [project]
 name = "drupal-scout"
-version = "3.1.2"
+version = "3.1.3"
 description = "Scout out for transitive versions of Drupal modules for the upgrade of the core."
 readme = "README.md"
 license = { file = "LICENSE.txt" }
@@ -21,8 +21,8 @@ authors = [{ name = "Andrew [R-Tech] Tsyhaniuk", email = "in0mad91@gmail.com" }]
 dependencies = [
     'jq',
     'argparse',
-    'aiohttp>=3.14.3',
-    'cryptography>=50.0.0',
+    'aiohttp>=3.14.4',
+    'cryptography>=50.0.2',
     'packaging',
     'fastmcp',
     "rich>=15.0.0",
